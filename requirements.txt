@@ -1,0 +1,16 @@
+# Core (writer module only — current MVP)
+numpy>=1.24
+
+# Tests
+pytest>=7.4
+
+# Later stages (download/decode/regrid). Listed here so a single
+# `pip install -r requirements.txt` sets up the full pipeline once
+# the modules land. On Windows, install pygrib via conda-forge to
+# avoid building ecCodes from source:
+#   conda install -c conda-forge pygrib pyproj xarray pyyaml requests
+pygrib>=2.1
+pyproj>=3.6
+xarray>=2024.1
+pyyaml>=6.0
+requests>=2.31

@@ -1,0 +1,88 @@
+# Example gfs2calmet run config.
+#
+# Every key is required (the loader refuses to silently default the
+# domain or output path). Copy this file and edit for your run.
+
+# ---------------------------------------------------------------------------
+# CALMET driver grid (in a projected CRS, all extents in km)
+# ---------------------------------------------------------------------------
+target_grid:
+  # PROJ string or any pyproj.CRS-compatible identifier.
+  # Qatar example uses UTM Zone 39N.
+  crs: "+proj=utm +zone=39 +ellps=WGS84 +units=m"
+  # SW corner of cell (0, 0), in projected km.
+  x0_km: 400.0
+  y0_km: 2700.0
+  dx_km: 4.0
+  dy_km: 4.0
+  nx: 50
+  ny: 50
+
+# ---------------------------------------------------------------------------
+# GFS cycle + forecast hours + which pressure levels to keep
+# ---------------------------------------------------------------------------
+gfs:
+  cycle: "2026-01-15T00:00"
+  # hourly out to 12 h; switch to range(0, 73) for a 3-day run.
+  forecast_hours: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  pressure_levels: [1000, 925, 850, 700, 600, 500]
+  # NOMADS product. pgrb2.0p25 is the 0.25-degree global file.
+  product: "pgrb2.0p25"
+  model: "gfs"
+  # Where Herbie caches downloaded GRIB2.
+  output_dir: "./data/grib"
+
+# ---------------------------------------------------------------------------
+# 3D.DAT output flags (which optional vertical-record fields are written)
+# ---------------------------------------------------------------------------
+output_flags:
+  ioutw: 0    # we do not compute vertical velocity (GFS omega → w conversion not yet implemented)
+  ioutq: 1    # RH + vapor mixing ratio
+  ioutc: 0    # cloud + rain mixing ratios (not in GFS pressure-level output)
+  iouti: 0
+  ioutg: 0
+  iosrf: 0    # do not also produce 2D.DAT
+
+# ---------------------------------------------------------------------------
+# Header options
+# ---------------------------------------------------------------------------
+header:
+  # MAPTXT goes verbatim into the projection record. CALMET understands
+  # 'LCC', 'MER', 'PS', 'UTM'. Keep this consistent with target_grid.crs.
+  maptxt: "UTM"
+  # Number of landuse categories CALMET should expect (USGS-25, USGS-38, …).
+  nland: 38
+  # Set to your terrain DEM elevation later; 0 is a placeholder.
+  default_elevation_m: 0
+  # USGS-25/38 category id used for every cell until you wire in a real
+  # landuse grid. 16 is "water"; downstream CALMET's GEO.DAT overrides
+  # this anyway.
+  default_landuse: 16
+  dataset_message: "Produced by gfs2calmet"
+  comments:
+    - "Qatar / UTM 39N driver grid"
+    - "GFS 0.25-degree cycle 2026-01-15 00 UTC"
+  # Optional projection metadata. For UTM these can stay at 0; for LCC
+  # set rlatc/rlonc to the projection origin and truelat1/2 to the
+  # secant latitudes.
+  truelat1: 0.0
+  truelat2: 0.0
+  rlatc: 0.0
+  rlonc: 0.0
+
+# ---------------------------------------------------------------------------
+# Per-frame conversion options
+# ---------------------------------------------------------------------------
+frame:
+  # Sea-surface temperature default for ocean cells when no SST field is
+  # downloaded. 0.0 makes the field unused.
+  default_sst_k: 0.0
+  default_snow_cover: 0
+  # If true, when q2 isn't downloaded we compute it from rh2 + t2 + mslp
+  # via the Tetens formula. If false, q2 becomes 0.
+  derive_q2_from_rh: true
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+output_path: "./out/QATAR_GFS_2026011500.3D.DAT"

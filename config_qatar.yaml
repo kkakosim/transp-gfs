@@ -1,0 +1,116 @@
+# gfs2calmet run config for Qatar (UTM Zone 39N, WGS-84).
+#
+# Grid parameters extracted from your existing CALMET.INP:
+#   PMAP=UTM, IUTMZN=39, UTMHEM=N, DATUM=WGS-84
+#   XORIGKM=453.9785, YORIGKM=2764.5820, NX=200, NY=200, DGRIDKM=1
+#
+# The 3D.DAT here is intentionally COARSER than CALMET's grid (4 km vs
+# 1 km) so we don't oversample GFS 0.25-degree data ~27x. CALMET reads
+# this 3D.DAT and interpolates internally to its own 1-km grid.
+# Change dx_km/dy_km/nx/ny below if you prefer a matching 1-km driver
+# (be aware that doubles the file size and offers no real skill gain).
+
+# ---------------------------------------------------------------------------
+# CALMET driver grid
+# ---------------------------------------------------------------------------
+target_grid:
+  # PROJ string for UTM Zone 39N on WGS-84 (matches PMAP=UTM, IUTMZN=39,
+  # UTMHEM=N, DATUM=WGS-84 in CALMET.INP).
+  crs: "+proj=utm +zone=39 +ellps=WGS84 +datum=WGS84 +units=m"
+  # SW corner of cell (1,1) in projected km. Matches XORIGKM/YORIGKM
+  # in your CALMET.INP exactly.
+  x0_km: 453.9785
+  y0_km: 2764.5820
+  # 4 km cells × 50 cells = 200 km — same extent as CALMET 200×1 km.
+  dx_km: 4.0
+  dy_km: 4.0
+  nx: 50
+  ny: 50
+
+# ---------------------------------------------------------------------------
+# GFS cycle + forecast hours + pressure levels
+# ---------------------------------------------------------------------------
+gfs:
+  # UTC cycle to download. NCEP releases at 00/06/12/18 UTC.
+  # Edit before each run.
+  cycle: "2026-01-15T00:00"
+  # Hourly forecast out to 72 h. NCEP serves hourly GFS through f120.
+  forecast_hours:
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+     13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+     25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+     37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+     49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+     61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72]
+  # 12 pressure levels covering surface to ~5.8 km — well above the
+  # 4000 m CALMET ZFACE top in your INP.
+  pressure_levels: [1000, 975, 950, 925, 900, 875, 850, 800, 750, 700, 600, 500]
+  product: "pgrb2.0p25"
+  model: "gfs"
+  # Herbie cache directory. Reused across runs to avoid re-downloads.
+  output_dir: "./data/grib"
+
+# ---------------------------------------------------------------------------
+# 3D.DAT output flags
+# ---------------------------------------------------------------------------
+output_flags:
+  # Vertical velocity. Off until we convert GFS Omega (Pa/s) -> W (m/s).
+  # CALMET with IPROG=14 does not require W; it computes its own.
+  ioutw: 0
+  # RH + vapor mixing ratio. Matches IRHPROG=1 in your CALMET.INP.
+  ioutq: 1
+  # Cloud + rain mixing ratios. Not in GFS pressure-level output.
+  # MCLOUD=3 in your CALMET.INP derives cloud from RH@850 anyway.
+  ioutc: 0
+  iouti: 0
+  ioutg: 0
+  # We do not also emit 2D.DAT (CALMET reads the 2D fields directly
+  # from the surface block of 3D.DAT when IPROG=14).
+  iosrf: 0
+
+# ---------------------------------------------------------------------------
+# Header options
+# ---------------------------------------------------------------------------
+header:
+  # MAPTXT goes verbatim into 3D.DAT's projection record. CALMET v6
+  # recognizes LCC / MER / PS / UTM.
+  maptxt: "UTM"
+  # Number of landuse categories. USGS-38 is the modern default; CALWRF
+  # writes 25 (USGS-25) for MM5 v3. Pick whichever matches GEO.DAT.
+  nland: 38
+  # Per-cell elevation placeholder. CALMET uses GEO.DAT for the real
+  # terrain; this field is informational only. Wire in a DEM sampler
+  # later if you want it populated correctly.
+  default_elevation_m: 0
+  # Per-cell landuse placeholder. CALMET uses GEO.DAT for real values.
+  # 16 = USGS "water/ocean" (matches ILUOC3D=16 in your CALMET.INP).
+  default_landuse: 16
+  dataset_message: "Produced by gfs2calmet from GFS 0.25 deg"
+  comments:
+    - "Qatar / UTM Zone 39N (WGS-84) driver grid"
+    - "Origin matches CALMET XORIGKM=453.9785 YORIGKM=2764.5820"
+    - "3D.DAT v2.1 format — feed CALMET with IPROG=14, ISTEPPGS=3600"
+  # UTM has no truelat/rlat — leave at 0. For LCC/PS runs set these
+  # to your projection origin and standard parallels.
+  truelat1: 0.0
+  truelat2: 0.0
+  rlatc: 0.0
+  rlonc: 0.0
+
+# ---------------------------------------------------------------------------
+# Per-frame conversion options
+# ---------------------------------------------------------------------------
+frame:
+  # No SST product downloaded; set a representative Gulf SST if you
+  # want overwater cells to carry it. 0 leaves the field unused.
+  default_sst_k: 0.0
+  default_snow_cover: 0
+  # When q2 isn't fetched (GFS often omits SPFH at 2 m), derive it
+  # from rh2 + t2 + mslp via Tetens. Set false to leave q2 at 0.
+  derive_q2_from_rh: true
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+# Output file name. Convention: QATAR_GFS_<YYYYMMDDHH>.3D.DAT
+output_path: "./out/QATAR_GFS_2026011500.3D.DAT"

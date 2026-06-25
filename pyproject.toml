@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gfs2calmet"
+version = "0.1.0"
+description = "GFS/ECMWF GRIB2 to CALMET 3D.DAT (v2.1) converter"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+pipeline = [
+    "pygrib>=2.1",
+    "pyproj>=3.6",
+    "xarray>=2024.1",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+    "herbie-data>=2024.1",
+]
+test = [
+    "pytest>=7.4",
+]
+
+[project.scripts]
+gfs2calmet = "gfs2calmet.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+    # pyproj 3.7 + numpy >=1.25 warn when Transformer.transform is given
+    # a 2D ndarray of size 1; result is still correct.
+    "ignore:Conversion of an array with ndim > 0 to a scalar is deprecated:DeprecationWarning",
+]

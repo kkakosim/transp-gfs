@@ -1,0 +1,30 @@
+# Conda environment for gfs2calmet on Ubuntu (or any Linux/macOS).
+#
+# Use this when you'd rather avoid building eccodes from source.
+# Conda-forge ships prebuilt eccodes + pygrib binaries that "just work".
+#
+# Create:    conda env create -f environment.yml
+# Activate:  conda activate gfs2calmet
+# Install pkg in editable mode (once activated):
+#            pip install -e .
+
+name: gfs2calmet
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - numpy>=1.24
+  - xarray>=2024.1
+  - pyproj>=3.6
+  - pyyaml>=6.0
+  - requests>=2.31
+  # GRIB stack — conda-forge bundles eccodes + cfgrib + pygrib together.
+  - eccodes>=2.30
+  - pygrib>=2.1
+  # Test
+  - pytest>=7.4
+  # Herbie is on PyPI only — install via pip after the env is created.
+  - pip
+  - pip:
+      - herbie-data>=2024.1

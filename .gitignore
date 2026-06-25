@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.env
+.idea/
+.vscode/
+build/
+dist/
+
+# Cached PDF spec from WebFetch
+_calmet_v6_manual.txt
+
+# GRIB inputs (downloaded at runtime)
+data/grib/
+data/cache/
+
+# Generated 3D.DAT outputs (except golden test data)
+*.3D.DAT
+*.3d.dat
+!tests/data/*.3D.DAT
