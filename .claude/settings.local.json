@@ -15,7 +15,18 @@
       "Bash(python -m pip install pyyaml)",
       "Bash(python -m pytest tests/test_config.py -q)",
       "Bash(PYTHONPATH=src python -m gfs2calmet --help)",
-      "Bash(python -)"
+      "Bash(python -)",
+      "Bash(gh auth *)",
+      "Bash(where gh.exe)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Users/kkako/AppData/Local/**)",
+      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(env)",
+      "Bash(git config *)"
     ]
   }
 }
