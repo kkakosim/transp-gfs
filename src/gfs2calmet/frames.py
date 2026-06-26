@@ -351,7 +351,26 @@ def build_frames(
     tp = _nan_to_zero(_select_field(ds, "tp"), "tp")        # optional
     dswrf = _nan_to_zero(_select_field(ds, "dswrf"), "dswrf")
     dlwrf = _nan_to_zero(_select_field(ds, "dlwrf"), "dlwrf")
-    sst = _select_field(ds, "sst")                          # optional
+    # ERA5 masks SST over land (NaN); CALMET (ITWPROG=2) rejects 3D.DAT
+    # if any cell has an invalid surface temperature, so we fall back to
+    # t2 (2 m air temperature) wherever SST is missing. This matches the
+    # convention used by MM5/WRF preprocessors. Also treat unphysical
+    # values (e.g. <= 0 K from a fill value) as missing.
+    sst_raw = _select_field(ds, "sst")
+    if sst_raw is not None:
+        sst = np.where(
+            np.isnan(sst_raw) | (sst_raw <= 0.0),
+            t2,
+            sst_raw,
+        )
+        n_fallback = int(np.sum(np.isnan(sst_raw) | (sst_raw <= 0.0)))
+        if n_fallback > 0:
+            _LOG.info(
+                "SST: %d/%d cells filled from t2 (land mask)",
+                n_fallback, sst_raw.size,
+            )
+    else:
+        sst = None
 
     # Pre-compute wind speed/direction for every (time, level, y, x) and
     # (time, y, x); vectorised here, sliced per cell below.
