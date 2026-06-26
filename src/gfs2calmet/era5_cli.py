@@ -112,14 +112,52 @@ def _run(cfg: Era5RunConfig, *, skip_download: bool) -> int:
         nhrsmm5=max(n_times - 1, 1),
     )
 
-    _LOG.info("Writing %s (%d frames)", cfg.output_path, n_times)
+    output_path = _resolve_output_path(
+        cfg.output_path, cfg.era5.start_date, cfg.era5.end_date,
+    )
+    _LOG.info("Writing %s (%d frames)", output_path, n_times)
     n = write_3ddat(
-        cfg.output_path,
+        output_path,
         header,
         _iter_frames(tgt_ds, cfg),
     )
     _LOG.info("Done. Wrote %d frames.", n)
     return 0
+
+
+def _resolve_output_path(user_path: str, start, end) -> str:
+    """Inject the actual date range into the output filename.
+
+    Stops old 3D.DAT files from being reused (or pointed at by CALMET.INP)
+    after the requested dates change.  If the user's filename already
+    contains the start-date stamp ``YYYYMMDDHH``, we leave it alone; this
+    lets callers script exact filenames when they want to.
+    """
+    import re                                          # noqa: PLC0415
+
+    start_stamp = start.strftime("%Y%m%d%H")
+    end_stamp = end.strftime("%Y%m%d%H")
+    p = Path(user_path)
+
+    # Treat the canonical 3D.DAT compound extension as a single suffix so
+    # the date stamp lands before ".3D.DAT", not between ".3D" and ".DAT".
+    name = p.name
+    for compound in (".3D.DAT", ".3D.dat"):
+        if name.lower().endswith(compound.lower()):
+            stem = name[: -len(compound)]
+            ext = name[-len(compound):]
+            break
+    else:
+        stem = p.stem
+        ext = p.suffix
+
+    if start_stamp in stem:
+        return str(p)
+
+    # Strip any pre-existing 10-digit date stamp(s) before re-stamping so
+    # repeated edits don't accumulate ``..._old_new`` suffixes.
+    cleaned = re.sub(r"_?\d{10}(?:_\d{10})?", "", stem).strip("_") or "ERA5"
+    return str(p.with_name(f"{cleaned}_{start_stamp}_{end_stamp}{ext}"))
 
 
 def _reconcile_pressure_levels(cfg: Era5RunConfig, tgt_ds) -> Era5RunConfig:
