@@ -56,7 +56,7 @@ def _configure_logging(verbosity: int) -> None:
     )
 
 
-def _existing_grib_paths(output_dir: str | None) -> tuple[Path, Path]:
+def _existing_grib_paths(output_dir: str | None) -> tuple[list[Path], list[Path]]:
     if output_dir is None:
         raise ValueError("--skip-download requires era5.output_dir to be set")
     d = Path(output_dir)
@@ -66,12 +66,7 @@ def _existing_grib_paths(output_dir: str | None) -> tuple[Path, Path]:
         raise FileNotFoundError(f"No era5_pl_*.grib2 files found in {d}")
     if not sl_files:
         raise FileNotFoundError(f"No era5_sl_*.grib2 files found in {d}")
-    if len(pl_files) > 1 or len(sl_files) > 1:
-        _LOG.warning(
-            "Multiple ERA5 GRIB files found; using most recent: %s, %s",
-            pl_files[-1].name, sl_files[-1].name,
-        )
-    return pl_files[-1], sl_files[-1]
+    return pl_files, sl_files
 
 
 def _run(cfg: Era5RunConfig, *, skip_download: bool) -> int:
@@ -81,10 +76,13 @@ def _run(cfg: Era5RunConfig, *, skip_download: bool) -> int:
     )
 
     if skip_download:
-        pl_path, sl_path = _existing_grib_paths(cfg.era5.output_dir)
-        _LOG.info("Reusing existing GRIB files: %s, %s", pl_path, sl_path)
+        pl_paths, sl_paths = _existing_grib_paths(cfg.era5.output_dir)
+        _LOG.info(
+            "Reusing %d existing GRIB chunk(s) from %s",
+            len(pl_paths), cfg.era5.output_dir,
+        )
     else:
-        pl_path, sl_path = download_era5_period(
+        pl_paths, sl_paths = download_era5_period(
             start=cfg.era5.start_date,
             end=cfg.era5.end_date,
             pressure_levels=cfg.era5.pressure_levels,
@@ -92,9 +90,9 @@ def _run(cfg: Era5RunConfig, *, skip_download: bool) -> int:
             target=cfg.target_grid,
         )
 
-    _LOG.info("Decoding ERA5 GRIB files")
+    _LOG.info("Decoding %d ERA5 GRIB chunk(s)", len(pl_paths))
     src_ds = read_era5_to_dataset(
-        pl_path, sl_path,
+        pl_paths, sl_paths,
         fields=DEFAULT_ERA5_FIELDS,
         levels=cfg.era5.pressure_levels,
     )

@@ -10,6 +10,48 @@ from __future__ import annotations
 from datetime import datetime
 
 from gfs2calmet.era5_cli import _resolve_output_path
+from gfs2calmet.era5_reader import _split_into_monthly_chunks
+
+
+class TestSplitIntoMonthlyChunks:
+    def test_single_day_is_one_chunk(self) -> None:
+        chunks = _split_into_monthly_chunks(
+            datetime(2022, 7, 1, 0), datetime(2022, 7, 1, 23),
+        )
+        assert chunks == [(datetime(2022, 7, 1, 0), datetime(2022, 7, 1, 23))]
+
+    def test_range_within_one_month_is_one_chunk(self) -> None:
+        chunks = _split_into_monthly_chunks(
+            datetime(2022, 7, 1, 0), datetime(2022, 7, 15, 23),
+        )
+        assert len(chunks) == 1
+
+    def test_two_month_span_yields_two_chunks(self) -> None:
+        chunks = _split_into_monthly_chunks(
+            datetime(2022, 7, 15, 0), datetime(2022, 8, 5, 12),
+        )
+        assert chunks == [
+            (datetime(2022, 7, 15, 0),  datetime(2022, 7, 31, 23)),
+            (datetime(2022, 8, 1, 0),   datetime(2022, 8, 5, 12)),
+        ]
+
+    def test_year_boundary(self) -> None:
+        chunks = _split_into_monthly_chunks(
+            datetime(2022, 12, 30, 0), datetime(2023, 1, 2, 0),
+        )
+        assert chunks == [
+            (datetime(2022, 12, 30, 0), datetime(2022, 12, 31, 23)),
+            (datetime(2023, 1, 1, 0),   datetime(2023, 1, 2, 0)),
+        ]
+
+    def test_three_month_span(self) -> None:
+        chunks = _split_into_monthly_chunks(
+            datetime(2022, 6, 15, 0), datetime(2022, 8, 10, 0),
+        )
+        assert [c[0].month for c in chunks] == [6, 7, 8]
+        assert chunks[0][1] == datetime(2022, 6, 30, 23)
+        assert chunks[1][1] == datetime(2022, 7, 31, 23)
+        assert chunks[2][1] == datetime(2022, 8, 10, 0)
 
 
 class TestResolveOutputPath:

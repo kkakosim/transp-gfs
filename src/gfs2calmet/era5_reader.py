@@ -111,6 +111,29 @@ def _bbox_from_target(target: Any, buffer_deg: float = 2.0) -> list[float]:
 # ---------------------------------------------------------------------------
 
 
+def _split_into_monthly_chunks(
+    start: datetime, end: datetime,
+) -> list[tuple[datetime, datetime]]:
+    """Split [start, end] into per-calendar-month (start, end) sub-ranges.
+
+    CDS request URLs grow with the year × month × day × time cross product;
+    splitting by calendar month keeps each request bounded to ~744 hours
+    (31 days × 24 h) and lets users redo just one month if a job fails.
+    """
+    chunks: list[tuple[datetime, datetime]] = []
+    cur_start = start
+    while cur_start <= end:
+        # Last hour of the current month.
+        if cur_start.month == 12:
+            next_month_first = datetime(cur_start.year + 1, 1, 1)
+        else:
+            next_month_first = datetime(cur_start.year, cur_start.month + 1, 1)
+        chunk_end = min(next_month_first - timedelta(hours=1), end)
+        chunks.append((cur_start, chunk_end))
+        cur_start = chunk_end + timedelta(hours=1)
+    return chunks
+
+
 def download_era5_period(
     start: datetime,
     end: datetime,
@@ -120,12 +143,13 @@ def download_era5_period(
     target: Any | None = None,
     buffer_deg: float = 2.0,
     cdsapi_module: Any | None = None,
-) -> tuple[Path, Path]:
+) -> tuple[list[Path], list[Path]]:
     """Download ERA5 GRIB2 for *start* to *end* (inclusive, hourly).
 
-    Two files are downloaded: one for pressure-level fields and one for
-    single-level (surface) fields.  CDS queues the request server-side;
-    typical wait time is 1–5 minutes for a multi-day period.
+    The request is split into per-calendar-month chunks so each CDS job
+    stays bounded in size (≤ 744 hours).  Within a chunk, two files are
+    downloaded — one for pressure-level fields, one for single-level —
+    matching the CDS dataset split.  Already-present files are reused.
 
     Parameters
     ----------
@@ -134,7 +158,7 @@ def download_era5_period(
     pressure_levels
         List of pressure levels in hPa (e.g. [1000, 925, 850, ...]).
     output_dir
-        Directory to save the two GRIB files.
+        Directory to save the GRIB files.
     target
         Optional ``TargetGrid`` used to compute a spatial subset (area).
         Pass ``None`` to download the global ERA5 grid (large!).
@@ -145,67 +169,78 @@ def download_era5_period(
 
     Returns
     -------
-    (pl_path, sl_path)
-        Paths to the pressure-level and single-level GRIB files.
+    (pl_paths, sl_paths)
+        Lists of pressure-level and single-level GRIB file paths, in
+        chronological order (one entry per monthly chunk).
     """
     cdsapi = cdsapi_module or _import_cdsapi()
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    steps = _hourly_steps(start, end)
-    if not steps:
+    chunks = _split_into_monthly_chunks(start, end)
+    if not chunks:
         raise ValueError(f"Empty date range: {start} → {end}")
-
-    date_args = _cds_date_args(steps)
     _LOG.info(
-        "ERA5 request: %d hours (%s → %s), %d pressure levels",
-        len(steps), start.isoformat(), end.isoformat(), len(pressure_levels),
+        "ERA5 request: %s → %s, %d pressure levels, %d monthly chunks",
+        start.isoformat(), end.isoformat(), len(pressure_levels), len(chunks),
     )
 
     area = _bbox_from_target(target, buffer_deg) if target is not None else None
-
-    common: dict[str, Any] = {
-        "product_type": "reanalysis",
-        "data_format": "grib",
-        **date_args,
-    }
-    if area is not None:
-        common["area"] = area
-
     client = cdsapi.Client()
+    pl_paths: list[Path] = []
+    sl_paths: list[Path] = []
 
-    # --- Pressure-level download ---
-    pl_path = out / f"era5_pl_{start:%Y%m%d%H}_{end:%Y%m%d%H}.grib2"
-    if pl_path.exists():
-        _LOG.info("Reusing existing pressure-level file: %s", pl_path)
-    else:
-        _LOG.info("Downloading pressure-level ERA5 → %s", pl_path)
-        client.retrieve(
-            "reanalysis-era5-pressure-levels",
-            {
-                **common,
-                "variable": CDS_PRESSURE_LEVEL_VARIABLES,
-                "pressure_level": [str(p) for p in pressure_levels],
-            },
-            str(pl_path),
+    for chunk_start, chunk_end in chunks:
+        steps = _hourly_steps(chunk_start, chunk_end)
+        date_args = _cds_date_args(steps)
+        common: dict[str, Any] = {
+            "product_type": "reanalysis",
+            "data_format": "grib",
+            **date_args,
+        }
+        if area is not None:
+            common["area"] = area
+
+        stamp = f"{chunk_start:%Y%m%d%H}_{chunk_end:%Y%m%d%H}"
+        _LOG.info(
+            "  chunk %s → %s (%d hours)",
+            chunk_start.isoformat(), chunk_end.isoformat(), len(steps),
         )
 
-    # --- Single-level download ---
-    sl_path = out / f"era5_sl_{start:%Y%m%d%H}_{end:%Y%m%d%H}.grib2"
-    if sl_path.exists():
-        _LOG.info("Reusing existing single-level file: %s", sl_path)
-    else:
-        _LOG.info("Downloading single-level ERA5 → %s", sl_path)
-        client.retrieve(
-            "reanalysis-era5-single-levels",
-            {
-                **common,
-                "variable": CDS_SINGLE_LEVEL_VARIABLES,
-            },
-            str(sl_path),
-        )
+        # --- Pressure-level ---
+        pl_path = out / f"era5_pl_{stamp}.grib2"
+        if pl_path.exists():
+            _LOG.info("    reusing %s", pl_path.name)
+        else:
+            _LOG.info("    downloading %s", pl_path.name)
+            client.retrieve(
+                "reanalysis-era5-pressure-levels",
+                {
+                    **common,
+                    "variable": CDS_PRESSURE_LEVEL_VARIABLES,
+                    "pressure_level": [str(p) for p in pressure_levels],
+                },
+                str(pl_path),
+            )
+        pl_paths.append(pl_path)
 
-    return pl_path, sl_path
+        # --- Single-level ---
+        sl_path = out / f"era5_sl_{stamp}.grib2"
+        if sl_path.exists():
+            _LOG.info("    reusing %s", sl_path.name)
+        else:
+            _LOG.info("    downloading %s", sl_path.name)
+            client.retrieve(
+                "reanalysis-era5-single-levels",
+                {
+                    **common,
+                    "variable": CDS_SINGLE_LEVEL_VARIABLES,
+                },
+                str(sl_path),
+            )
+        sl_paths.append(sl_path)
+
+    return pl_paths, sl_paths
 
 
 # ---------------------------------------------------------------------------
@@ -229,11 +264,12 @@ def deaccumulate_radiation(ds: Any) -> Any:
         arr = ds[role].values.copy()   # shape (time, ...)
         result = np.empty_like(arr)
         result[0] = arr[0] / 3600.0
+        # Element-wise: where the previous step was higher (accumulation
+        # reset between this step and the prior one) treat the current
+        # value as a fresh one-hour accumulation; otherwise use the diff.
         for ti in range(1, len(arr)):
             diff = arr[ti] - arr[ti - 1]
-            # Negative diff → accumulation reset; treat the current value
-            # as a fresh accumulation over one hour.
-            result[ti] = (diff if diff >= 0 else arr[ti]) / 3600.0
+            result[ti] = np.where(diff >= 0.0, diff, arr[ti]) / 3600.0
         result = np.maximum(result, 0.0)
         ds = ds.assign(
             {role: xr.DataArray(result, dims=ds[role].dims, attrs={
@@ -249,8 +285,8 @@ def deaccumulate_radiation(ds: Any) -> Any:
 
 
 def read_era5_to_dataset(
-    pl_path: str | os.PathLike[str],
-    sl_path: str | os.PathLike[str],
+    pl_paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+    sl_paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
     fields: Sequence[GfsField] = DEFAULT_ERA5_FIELDS,
     levels: Sequence[int] | None = None,
     *,
@@ -259,6 +295,10 @@ def read_era5_to_dataset(
 ) -> Any:
     """Decode pressure-level and single-level ERA5 GRIB files into one Dataset.
 
+    Accepts either single paths or lists of paths (one per monthly chunk
+    when the requested period spans multiple months).  All GRIBs are
+    concatenated along the time axis.
+
     The returned Dataset has the same variable names and units as the GFS
     pipeline so ``regrid_dataset``, ``build_frames``, and ``write_3ddat``
     work without modification.
@@ -266,8 +306,10 @@ def read_era5_to_dataset(
     Radiation fields (dswrf / dlwrf) are deaccumulated from J/m² to W/m²
     before returning.
     """
+    pl_list = _as_path_list(pl_paths)
+    sl_list = _as_path_list(sl_paths)
     messages = _extract_messages(
-        [pl_path, sl_path], fields, levels,
+        [*pl_list, *sl_list], fields, levels,
         pygrib_module=pygrib_module,
         # ERA5 ships every requested hour inside a single GRIB; collapsing
         # to one time per file would keep only the last hour.
@@ -276,3 +318,11 @@ def read_era5_to_dataset(
     ds = _assemble_dataset(messages, fields, xarray_module=xarray_module)
     ds = deaccumulate_radiation(ds)
     return ds
+
+
+def _as_path_list(
+    paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+) -> list[str | os.PathLike[str]]:
+    if isinstance(paths, (str, os.PathLike)):
+        return [paths]
+    return list(paths)
