@@ -309,3 +309,43 @@ class TestBuildFrames:
         ds_bad = ds.drop_vars("t_pl")
         with pytest.raises(KeyError, match="t_pl"):
             build_frames(ds_bad, self._opts())
+
+    def test_nan_in_field_is_replaced_with_zero_and_warned(
+        self, caplog
+    ) -> None:
+        """NaN must never reach the writer: fmt_f would emit 'nan' and
+        CALMET would crash. build_frames replaces NaN with 0 and logs
+        the field name + count."""
+        ds = _make_regridded_dataset()
+        # Inject NaN into rh_pl at (time=0, level=0, y=0, x=0).
+        rh_corrupted = ds["rh_pl"].values.copy()
+        rh_corrupted[0, 0, 0, 0] = np.nan
+        ds = ds.assign(
+            rh_pl=(("time", "level", "y", "x"), rh_corrupted, ds["rh_pl"].attrs)
+        )
+
+        with caplog.at_level("WARNING", logger="gfs2calmet.frames"):
+            frames = build_frames(ds, self._opts())
+
+        # No NaN reaches the produced VerticalRecord.
+        vr = frames[0].cells[0].levels[0]
+        assert not np.isnan(vr.tempk)
+        assert not np.isnan(vr.ws)
+        assert vr.rh == 0  # was NaN → 0 → int
+        # Warning fired with the field name + count.
+        msgs = [rec.message for rec in caplog.records]
+        assert any("rh_pl" in m and "1" in m for m in msgs)
+
+    def test_nan_in_surface_field_is_replaced_with_zero(self) -> None:
+        ds = _make_regridded_dataset()
+        mslp_corrupted = ds["mslp"].values.copy()
+        mslp_corrupted[0, 0, 0] = np.nan
+        ds = ds.assign(
+            mslp=(("time", "y", "x"), mslp_corrupted, ds["mslp"].attrs)
+        )
+        frames = build_frames(ds, self._opts())
+        # The corrupted cell now carries the substituted 0, not NaN.
+        bad_cell = next(c for c in frames[0].cells
+                        if c.surface.ix == 1 and c.surface.jx == 1)
+        assert bad_cell.surface.pres == 0.0
+        assert not np.isnan(bad_cell.surface.pres)

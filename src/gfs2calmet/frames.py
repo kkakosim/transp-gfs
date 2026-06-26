@@ -16,11 +16,15 @@ written to 3D.DAT at all.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Sequence
 
 import numpy as np
+
+
+_LOG = logging.getLogger(__name__)
 
 from gfs2calmet.dataset import (
     CellData,
@@ -255,6 +259,39 @@ def _require_field(ds: Any, name: str) -> np.ndarray:
     return v
 
 
+def _nan_to_zero(arr: np.ndarray | None, name: str) -> np.ndarray | None:
+    """Replace NaN with 0 and log a warning with the count if any found.
+
+    NaN must never reach the 3D.DAT writer: ``fmt_f`` would emit "nan"
+    and CALMET's FORTRAN reader would crash on it; ``.astype(int)`` on
+    a NaN raises a RuntimeWarning and produces undefined integer
+    values.
+
+    The most likely sources of NaN are:
+      * Regridder mapping target cells outside source coverage (Qatar
+        is well inside global GFS, so this should not happen here).
+      * A pressure level present in some forecast hours but not others
+        (the per-file streaming decode then has an unfilled slice).
+      * Source GRIB messages with masked/bitmapped missing data.
+
+    When we find any NaN we log the field name and count once per
+    build_frames() call so the operator can investigate.
+    """
+    if arr is None:
+        return arr
+    nan_mask = np.isnan(arr)
+    n_nan = int(nan_mask.sum())
+    if n_nan == 0:
+        return arr
+    total = arr.size
+    _LOG.warning(
+        "Field %s: %d / %d NaN values replaced with 0 before write "
+        "(%.2f%% — investigate if non-trivial)",
+        name, n_nan, total, 100.0 * n_nan / total,
+    )
+    return np.where(nan_mask, 0.0, arr)
+
+
 def build_frames(
     ds: Any,
     options: FrameOptions,
@@ -278,24 +315,27 @@ def build_frames(
     ny = ds.sizes["y"]
     nx = ds.sizes["x"]
 
-    # Pressure-level fields (required).
-    t_pl = _require_field(ds, "t_pl")                # (nt, nz, ny, nx)
-    u_pl = _require_field(ds, "u_pl")
-    v_pl = _require_field(ds, "v_pl")
-    h_pl = _require_field(ds, "h_pl")
-    rh_pl = _require_field(ds, "rh_pl")
-    q_pl = _select_field(ds, "q_pl")                 # optional
+    # Pressure-level fields (required). NaN is replaced with 0 with a
+    # one-line warning per field — guards against the writer producing
+    # "nan" tokens that CALMET cannot parse, and against undefined
+    # integer values from .astype(int) on a NaN float.
+    t_pl = _nan_to_zero(_require_field(ds, "t_pl"), "t_pl")
+    u_pl = _nan_to_zero(_require_field(ds, "u_pl"), "u_pl")
+    v_pl = _nan_to_zero(_require_field(ds, "v_pl"), "v_pl")
+    h_pl = _nan_to_zero(_require_field(ds, "h_pl"), "h_pl")
+    rh_pl = _nan_to_zero(_require_field(ds, "rh_pl"), "rh_pl")
+    q_pl = _nan_to_zero(_select_field(ds, "q_pl"), "q_pl")  # optional
 
     # Surface fields.
-    mslp = _require_field(ds, "mslp")                # hPa
-    u10 = _require_field(ds, "u10")
-    v10 = _require_field(ds, "v10")
-    t2 = _require_field(ds, "t2")
-    q2 = _select_field(ds, "q2")                     # g/kg, optional
-    rh2 = _select_field(ds, "rh2")                   # %, optional
-    tp = _select_field(ds, "tp")                     # cm
-    dswrf = _select_field(ds, "dswrf")
-    dlwrf = _select_field(ds, "dlwrf")
+    mslp = _nan_to_zero(_require_field(ds, "mslp"), "mslp")
+    u10 = _nan_to_zero(_require_field(ds, "u10"), "u10")
+    v10 = _nan_to_zero(_require_field(ds, "v10"), "v10")
+    t2 = _nan_to_zero(_require_field(ds, "t2"), "t2")
+    q2 = _nan_to_zero(_select_field(ds, "q2"), "q2")        # optional
+    rh2 = _nan_to_zero(_select_field(ds, "rh2"), "rh2")     # optional
+    tp = _nan_to_zero(_select_field(ds, "tp"), "tp")        # optional
+    dswrf = _nan_to_zero(_select_field(ds, "dswrf"), "dswrf")
+    dlwrf = _nan_to_zero(_select_field(ds, "dlwrf"), "dlwrf")
 
     # Pre-compute wind speed/direction for every (time, level, y, x) and
     # (time, y, x); vectorised here, sliced per cell below.
@@ -321,9 +361,12 @@ def build_frames(
     else:
         q2_gkg = np.zeros_like(t2)
 
-    rh_pl_int = np.clip(np.round(rh_pl), 0, 100).astype(int)
-    h_pl_int = np.round(h_pl).astype(int)
-    wd_pl_int = np.round(wd_pl).astype(int) % 360
+    # All NaN was scrubbed above, so .astype(int) is safe here. We use
+    # np.int64 explicitly for portability between Linux (int=long) and
+    # Windows (int=int32) — the values fit in int32 anyway.
+    rh_pl_int = np.clip(np.round(rh_pl), 0, 100).astype(np.int64)
+    h_pl_int = np.round(h_pl).astype(np.int64)
+    wd_pl_int = np.round(wd_pl).astype(np.int64) % 360
 
     frames: list[Frame] = []
     for ti, t in enumerate(times):
