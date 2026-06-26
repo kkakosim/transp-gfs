@@ -35,9 +35,9 @@ era5:
   # Must cover CALMET.INP's IBYR/IBMO/IBDY/IBHR → IEYR/IEMO/IEDY/IEHR
   # range.  CALMET reads 3D.DAT records by timestamp; if no record
   # matches its IBYR..IBHR start it exits with "ran out of MM5 data
-  # before start".  Current CALMET.INP: 2024-04-14 00:00 → 2024-04-17 03:00.
-  start_date: "2024-04-14T00:00"
-  end_date:   "2024-04-17T03:00"
+  # before start".  Keep CALMET.INP and this section in sync.
+  start_date: "2022-07-01T00:00"
+  end_date:   "2022-07-04T03:00"
   # ERA5 has the same standard levels as GFS plus 875 hPa.
   pressure_levels: [1000, 975, 950, 925, 900, 875, 850, 800, 750, 700, 650, 600, 500]
   # Where to save the two downloaded GRIB files.  Reused on re-runs.
@@ -83,4 +83,4 @@ frame:
 # ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
-output_path: "./out/ERA5_2024041400.3D.DAT"
+output_path: "./out/ERA5_2022070100.3D.DAT"

@@ -113,15 +113,15 @@ NOTES: (1) File/path names can be up to 70 characters in length
 INPUT GROUP: 1 -- General run control parameters
 --------------
 
-     Starting date:    Year   (IBYR)  --    No default   ! IBYR = 2024 !
-                       Month  (IBMO)  --    No default   ! IBMO = 4 !
-                       Day    (IBDY)  --    No default   ! IBDY = 14 !
+     Starting date:    Year   (IBYR)  --    No default   ! IBYR = 2022 !
+                       Month  (IBMO)  --    No default   ! IBMO = 7 !
+                       Day    (IBDY)  --    No default   ! IBDY = 1 !
      Starting time:    Hour   (IBHR)  --    No default   ! IBHR = 0 !
                        Second (IBSEC) --    No default   ! IBSEC = 0 !
 
-     Ending date:      Year   (IEYR)  --    No default   ! IEYR = 2024 !
-                       Month  (IEMO)  --    No default   ! IEMO = 4 !
-                       Day    (IEDY)  --    No default   ! IEDY = 17 !
+     Ending date:      Year   (IEYR)  --    No default   ! IEYR = 2022 !
+                       Month  (IEMO)  --    No default   ! IEMO = 7 !
+                       Day    (IEDY)  --    No default   ! IEDY = 4 !
      Ending time:      Hour   (IEHR)  --    No default   ! IEHR = 3 !
                        Second (IESEC) --    No default   ! IESEC = 0 !
 
