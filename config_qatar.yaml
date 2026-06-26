@@ -7,25 +7,38 @@
 # The 3D.DAT here is intentionally COARSER than CALMET's grid (4 km vs
 # 1 km) so we don't oversample GFS 0.25-degree data ~27x. CALMET reads
 # this 3D.DAT and interpolates internally to its own 1-km grid.
-# Change dx_km/dy_km/nx/ny below if you prefer a matching 1-km driver
-# (be aware that doubles the file size and offers no real skill gain).
 
 # ---------------------------------------------------------------------------
-# CALMET driver grid
+# CALMET driver grid (extends BEYOND the CALMET met grid with a halo)
 # ---------------------------------------------------------------------------
+# CALMET's diagnostic-wind step interpolates from this grid onto its own
+# met grid. If the two grids are edge-coincident, the corner CALMET
+# cells have no surrounding 3D.DAT cells and CALMET falls back to
+# nearest-neighbor at the edges (visible as boundary artifacts in the
+# diagnosed wind field; some CALMET versions also emit a warning).
+#
+# The 3D.DAT therefore extends 2 cells (8 km) beyond the CALMET met
+# grid on every side:
+#     CALMET:  200 x 1 km from SW (453.978, 2764.582) -> 200x200 km
+#     3D.DAT:   54 x 4 km from SW (445.978, 2756.582) -> 216x216 km
+#     halo:     2 cells (8 km) of 3D.DAT margin around every CALMET edge
+#
 target_grid:
   # PROJ string for UTM Zone 39N on WGS-84 (matches PMAP=UTM, IUTMZN=39,
   # UTMHEM=N, DATUM=WGS-84 in CALMET.INP).
   crs: "+proj=utm +zone=39 +ellps=WGS84 +datum=WGS84 +units=m"
-  # SW corner of cell (1,1) in projected km. Matches XORIGKM/YORIGKM
-  # in your CALMET.INP exactly.
-  x0_km: 453.9785
-  y0_km: 2764.5820
-  # 4 km cells × 50 cells = 200 km — same extent as CALMET 200×1 km.
+  # SW corner of cell (1,1) in projected km. 8 km southwest of the
+  # CALMET met grid SW corner (XORIGKM/YORIGKM) so the 3D.DAT extends
+  # one 2-cell halo beyond CALMET in every direction.
+  x0_km: 445.978
+  y0_km: 2756.582
   dx_km: 4.0
   dy_km: 4.0
-  nx: 50
-  ny: 50
+  # 54 cells * 4 km = 216 km extent: CALMET's 200 km + 2 halo cells of
+  # 4 km on each side. To remove the halo (edge-coincident grids) set
+  # x0_km = 453.9785, y0_km = 2764.5820, nx = ny = 50.
+  nx: 54
+  ny: 54
 
 # ---------------------------------------------------------------------------
 # GFS cycle + forecast hours + pressure levels
