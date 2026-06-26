@@ -351,26 +351,32 @@ def build_frames(
     tp = _nan_to_zero(_select_field(ds, "tp"), "tp")        # optional
     dswrf = _nan_to_zero(_select_field(ds, "dswrf"), "dswrf")
     dlwrf = _nan_to_zero(_select_field(ds, "dlwrf"), "dlwrf")
-    # ERA5 masks SST over land (NaN); CALMET (ITWPROG=2) rejects 3D.DAT
-    # if any cell has an invalid surface temperature, so we fall back to
-    # t2 (2 m air temperature) wherever SST is missing. This matches the
-    # convention used by MM5/WRF preprocessors. Also treat unphysical
-    # values (e.g. <= 0 K from a fill value) as missing.
+    # ERA5 masks SST over land. pygrib may return masked values either as
+    # NaN or as a large GRIB fill value (typically ~9.969e+36 or 9999),
+    # not as a real temperature.  CALMET (ITWPROG=2) rejects 3D.DAT if any
+    # cell has an invalid surface temperature, so we fall back to t2
+    # (2 m air temperature) wherever SST is missing or out of physical
+    # range.  Valid surface temperatures fall in [200, 350] K
+    # (~ -73 °C to +77 °C), well beyond any real-world ocean range while
+    # rejecting fill values and zero-fills.
     sst_raw = _select_field(ds, "sst")
     if sst_raw is not None:
-        sst = np.where(
-            np.isnan(sst_raw) | (sst_raw <= 0.0),
-            t2,
-            sst_raw,
-        )
-        n_fallback = int(np.sum(np.isnan(sst_raw) | (sst_raw <= 0.0)))
-        if n_fallback > 0:
+        invalid = ~np.isfinite(sst_raw) | (sst_raw < 200.0) | (sst_raw > 350.0)
+        sst = np.where(invalid, t2, sst_raw)
+        n_invalid = int(np.sum(invalid))
+        if n_invalid > 0:
             _LOG.info(
-                "SST: %d/%d cells filled from t2 (land mask)",
-                n_fallback, sst_raw.size,
+                "SST: %d/%d cells filled from t2 (land mask / fill values)",
+                n_invalid, sst_raw.size,
             )
     else:
-        sst = None
+        # No SST field at all in the source — fall back to t2 everywhere
+        # so CALMET ITWPROG=2 has something valid.  Operator can override
+        # by setting frame.default_sst_k explicitly (handled below).
+        _LOG.warning(
+            "No SST field in source dataset; substituting t2 for all cells"
+        )
+        sst = t2.copy()
 
     # Pre-compute wind speed/direction for every (time, level, y, x) and
     # (time, y, x); vectorised here, sliced per cell below.
@@ -424,7 +430,7 @@ def build_frames(
                     q2=float(q2_gkg[ti, j, i]),
                     wd10=float(wd10[ti, j, i]),
                     ws10=float(ws10[ti, j, i]),
-                    sst=float(sst[ti, j, i]) if sst is not None else options.default_sst_k,
+                    sst=float(sst[ti, j, i]),
                 )
                 levels: list[VerticalRecord] = []
                 for k, p_hpa in enumerate(options.pressure_levels):

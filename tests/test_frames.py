@@ -289,14 +289,31 @@ class TestBuildFrames:
             assert cell.surface.q2 == pytest.approx(expected)
 
     def test_optional_surface_fields_default_to_zero(self) -> None:
-        ds = _make_regridded_dataset()  # has no tp / dswrf / dlwrf
+        ds = _make_regridded_dataset()  # has no tp / dswrf / dlwrf / sst
         frames = build_frames(ds, self._opts())
         cell = frames[0].cells[0]
         assert cell.surface.rain == 0.0
         assert cell.surface.radsw == 0.0
         assert cell.surface.radlw == 0.0
         assert cell.surface.sc == 0
-        assert cell.surface.sst == 0.0
+        # When SST is absent from the source dataset, we fall back to t2
+        # so CALMET ITWPROG=2 always has a valid surface temperature.
+        assert cell.surface.sst == cell.surface.t2
+
+    def test_sst_land_mask_falls_back_to_t2(self) -> None:
+        """ERA5 masks SST over land with fill values; those cells must
+        fall back to t2 so CALMET ITWPROG=2 sees a valid temperature."""
+        ds = _make_regridded_dataset()
+        # Mix valid SST (over water) with fill values (over land).
+        sst_arr = np.full(ds["t2"].shape, 9.969e36)  # GRIB fill
+        sst_arr[0, 0, 0] = 301.5  # one valid water cell
+        ds = ds.assign(sst=(("time", "y", "x"), sst_arr, {"units": "K"}))
+        frames = build_frames(ds, self._opts())
+        cell00 = frames[0].cells[0]                  # (j=0, i=0)
+        assert cell00.surface.sst == pytest.approx(301.5)
+        # Every other cell must have fallen back to its t2 value.
+        for cell in frames[0].cells[1:]:
+            assert cell.surface.sst == cell.surface.t2
 
     def test_sst_from_dataset_overrides_default(self) -> None:
         ds = _make_regridded_dataset()
