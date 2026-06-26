@@ -29,7 +29,9 @@ class GfsCycleConfig:
     """Which forecast cycle to download and which hours to keep."""
 
     cycle: datetime
-    forecast_hours: list[int]
+    start_date: datetime
+    end_date: datetime
+    forecast_hours: list[int]          # derived from start_date/end_date
     product: str = "pgrb2.0p25"
     model: str = "gfs"
     output_dir: str | None = None
@@ -90,7 +92,7 @@ def _target_grid_from_dict(d: dict[str, Any]) -> TargetGrid:
 
 
 def _gfs_cycle_from_dict(d: dict[str, Any]) -> GfsCycleConfig:
-    required = {"cycle", "forecast_hours", "pressure_levels"}
+    required = {"cycle", "start_date", "end_date", "pressure_levels"}
     optional = {"product", "model", "output_dir"}
     extra = d.keys() - (required | optional)
     if extra:
@@ -98,9 +100,29 @@ def _gfs_cycle_from_dict(d: dict[str, Any]) -> GfsCycleConfig:
     missing = required - d.keys()
     if missing:
         raise KeyError(f"gfs: missing keys {sorted(missing)}")
+
+    cycle = _parse_datetime(d["cycle"])
+    start = _parse_datetime(d["start_date"])
+    end = _parse_datetime(d["end_date"])
+
+    if start < cycle:
+        raise ValueError(
+            f"gfs.start_date ({start}) is before gfs.cycle ({cycle})"
+        )
+    if end < start:
+        raise ValueError(
+            f"gfs.end_date ({end}) is before gfs.start_date ({start})"
+        )
+
+    fxx_start = int((start - cycle).total_seconds() // 3600)
+    fxx_end = int((end - cycle).total_seconds() // 3600)
+    forecast_hours = list(range(fxx_start, fxx_end + 1))
+
     return GfsCycleConfig(
-        cycle=_parse_datetime(d["cycle"]),
-        forecast_hours=[int(h) for h in d["forecast_hours"]],
+        cycle=cycle,
+        start_date=start,
+        end_date=end,
+        forecast_hours=forecast_hours,
         pressure_levels=[int(p) for p in d["pressure_levels"]],
         product=str(d.get("product", "pgrb2.0p25")),
         model=str(d.get("model", "gfs")),

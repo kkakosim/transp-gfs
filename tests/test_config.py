@@ -28,7 +28,8 @@ _FULL_VALID_YAML = dedent("""
 
     gfs:
       cycle: "2026-01-15T00:00"
-      forecast_hours: [0, 1, 2, 3]
+      start_date: "2026-01-15T00:00"
+      end_date: "2026-01-15T03:00"
       pressure_levels: [1000, 925, 850, 500]
       product: pgrb2.0p25
       model: gfs
@@ -88,6 +89,8 @@ class TestFullValidConfig:
         p = _write_config(tmp_path, _FULL_VALID_YAML)
         cfg = load_config(p)
         assert cfg.gfs.cycle == datetime(2026, 1, 15, 0, 0)
+        assert cfg.gfs.start_date == datetime(2026, 1, 15, 0, 0)
+        assert cfg.gfs.end_date == datetime(2026, 1, 15, 3, 0)
         assert cfg.gfs.forecast_hours == [0, 1, 2, 3]
         assert cfg.gfs.pressure_levels == [1000, 925, 850, 500]
 
@@ -160,6 +163,44 @@ class TestSchemaEnforcement:
         bad = _FULL_VALID_YAML.replace("  ioutq: 1\n", "  ioutq: 2\n")
         p = _write_config(tmp_path, bad)
         with pytest.raises(ValueError, match="ioutq"):
+            load_config(p)
+
+
+class TestGfsDateRange:
+    def test_forecast_hours_derived_from_dates(self, tmp_path: Path) -> None:
+        # cycle=00Z, start=00Z, end=03Z → fxx [0,1,2,3]
+        p = _write_config(tmp_path, _FULL_VALID_YAML)
+        cfg = load_config(p)
+        assert cfg.gfs.forecast_hours == [0, 1, 2, 3]
+
+    def test_start_offset_from_cycle(self, tmp_path: Path) -> None:
+        body = _FULL_VALID_YAML.replace(
+            'start_date: "2026-01-15T00:00"',
+            'start_date: "2026-01-15T06:00"',
+        ).replace(
+            'end_date: "2026-01-15T03:00"',
+            'end_date: "2026-01-15T08:00"',
+        )
+        p = _write_config(tmp_path, body)
+        cfg = load_config(p)
+        assert cfg.gfs.forecast_hours == [6, 7, 8]
+
+    def test_start_before_cycle_raises(self, tmp_path: Path) -> None:
+        body = _FULL_VALID_YAML.replace(
+            'start_date: "2026-01-15T00:00"',
+            'start_date: "2026-01-14T00:00"',
+        )
+        p = _write_config(tmp_path, body)
+        with pytest.raises(ValueError, match="before gfs.cycle"):
+            load_config(p)
+
+    def test_end_before_start_raises(self, tmp_path: Path) -> None:
+        body = _FULL_VALID_YAML.replace(
+            'end_date: "2026-01-15T03:00"',
+            'end_date: "2026-01-14T23:00"',
+        )
+        p = _write_config(tmp_path, body)
+        with pytest.raises(ValueError, match="before gfs.start_date"):
             load_config(p)
 
 

@@ -19,12 +19,15 @@ target_grid:
   ny: 50
 
 # ---------------------------------------------------------------------------
-# GFS cycle + forecast hours + which pressure levels to keep
+# GFS cycle + date range + which pressure levels to keep
 # ---------------------------------------------------------------------------
 gfs:
   cycle: "2026-01-15T00:00"
-  # hourly out to 12 h; switch to range(0, 73) for a 3-day run.
-  forecast_hours: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  # Inclusive start/end for the 3D.DAT output. Forecast hours are derived
+  # automatically as hourly steps from start_date to end_date.
+  # start_date must be >= cycle; NCEP serves hourly GFS through f120.
+  start_date: "2026-01-15T00:00"
+  end_date:   "2026-01-16T12:00"
   pressure_levels: [1000, 925, 850, 700, 600, 500]
   # NOMADS product. pgrb2.0p25 is the 0.25-degree global file.
   product: "pgrb2.0p25"
