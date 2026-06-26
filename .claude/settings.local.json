@@ -26,7 +26,15 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(env)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(python -m pytest tests/test_cli.py -q)",
+      "Bash(python -m pytest tests/test_cli.py::test_write_path_matches_config -q)",
+      "Bash(git ls-remote *)",
+      "Bash(git pull *)",
+      "Bash(git merge *)",
+      "Bash(git branch *)",
+      "Bash(git fetch *)",
+      "Bash(python -m pytest tests/test_frames.py -x -q)"
     ]
   }
 }

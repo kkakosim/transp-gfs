@@ -298,6 +298,14 @@ class TestBuildFrames:
         assert cell.surface.sc == 0
         assert cell.surface.sst == 0.0
 
+    def test_sst_from_dataset_overrides_default(self) -> None:
+        ds = _make_regridded_dataset()
+        sst_k = np.full(ds["mslp"].shape, 302.5)
+        ds = ds.assign(sst=(("time", "y", "x"), sst_k, {"units": "K"}))
+        frames = build_frames(ds, self._opts())
+        for cell in frames[0].cells:
+            assert cell.surface.sst == pytest.approx(302.5)
+
     def test_pressure_levels_mismatch_raises(self) -> None:
         ds = _make_regridded_dataset()
         bad_opts = FrameOptions(pressure_levels=[1000, 700])  # ds has [1000,850]

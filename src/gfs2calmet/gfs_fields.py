@@ -99,6 +99,7 @@ ROLES: tuple[str, ...] = (
     "tp",
     "dswrf",
     "dlwrf",
+    "sst",
 )
 
 
@@ -201,6 +202,11 @@ SURFACE_FIELDS: tuple[GfsField, ...] = (
         type_of_level="surface", level=0,
         native_units="W/m^2", target_units="W/m^2", optional=True,
     ),
+    GfsField(
+        role="sst", short_name="t",
+        type_of_level="surface", level=0,
+        native_units="K", target_units="K", optional=True,
+    ),
 )
 
 
@@ -237,6 +243,7 @@ HERBIE_IDX_PATTERNS: dict[str, str] = {
     "tp":     r":APCP:surface:",
     "dswrf":  r":DSWRF:surface:",
     "dlwrf":  r":DLWRF:surface:",
+    "sst":    r":TMP:surface:",
 }
 
 

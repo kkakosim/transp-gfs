@@ -336,6 +336,7 @@ def build_frames(
     tp = _nan_to_zero(_select_field(ds, "tp"), "tp")        # optional
     dswrf = _nan_to_zero(_select_field(ds, "dswrf"), "dswrf")
     dlwrf = _nan_to_zero(_select_field(ds, "dlwrf"), "dlwrf")
+    sst = _select_field(ds, "sst")                          # optional
 
     # Pre-compute wind speed/direction for every (time, level, y, x) and
     # (time, y, x); vectorised here, sliced per cell below.
@@ -385,7 +386,7 @@ def build_frames(
                     q2=float(q2_gkg[ti, j, i]),
                     wd10=float(wd10[ti, j, i]),
                     ws10=float(ws10[ti, j, i]),
-                    sst=options.default_sst_k,
+                    sst=float(sst[ti, j, i]) if sst is not None else options.default_sst_k,
                 )
                 levels: list[VerticalRecord] = []
                 for k, p_hpa in enumerate(options.pressure_levels):
