@@ -35,7 +35,9 @@
       "Bash(git branch *)",
       "Bash(git fetch *)",
       "Bash(python -m pytest tests/test_frames.py -x -q)",
-      "Bash(python -m pytest tests/test_config.py -x -q)"
+      "Bash(python -m pytest tests/test_config.py -x -q)",
+      "Bash(python -m pytest tests/ -x -q)",
+      "Bash(python -m pytest tests/ -q)"
     ]
   }
 }

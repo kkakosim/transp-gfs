@@ -43,12 +43,34 @@ class GfsCycleConfig:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Era5Config:
+    """ERA5 reanalysis download parameters."""
+
+    start_date: datetime
+    end_date: datetime
+    pressure_levels: list[int]
+    output_dir: str | None = None
+
+
 @dataclass
 class RunConfig:
     """Full configuration for one ``python -m gfs2calmet`` invocation."""
 
     target_grid: TargetGrid
     gfs: GfsCycleConfig
+    output_flags: OutputFlags
+    header: HeaderOptions
+    frame: FrameOptions
+    output_path: str
+
+
+@dataclass
+class Era5RunConfig:
+    """Full configuration for one ERA5 → 3D.DAT run."""
+
+    target_grid: TargetGrid
+    era5: Era5Config
     output_flags: OutputFlags
     header: HeaderOptions
     frame: FrameOptions
@@ -188,6 +210,61 @@ def _frame_options_from_dict(
         default_sst_k=float(d.get("default_sst_k", 0.0)),
         default_snow_cover=int(d.get("default_snow_cover", 0)),
         derive_q2_from_rh=bool(d.get("derive_q2_from_rh", True)),
+    )
+
+
+def _era5_config_from_dict(d: dict[str, Any]) -> Era5Config:
+    required = {"start_date", "end_date", "pressure_levels"}
+    optional = {"output_dir"}
+    extra = d.keys() - (required | optional)
+    if extra:
+        raise KeyError(f"era5: unknown keys {sorted(extra)}")
+    missing = required - d.keys()
+    if missing:
+        raise KeyError(f"era5: missing keys {sorted(missing)}")
+
+    start = _parse_datetime(d["start_date"])
+    end = _parse_datetime(d["end_date"])
+    if end < start:
+        raise ValueError(
+            f"era5.end_date ({end}) is before era5.start_date ({start})"
+        )
+    return Era5Config(
+        start_date=start,
+        end_date=end,
+        pressure_levels=[int(p) for p in d["pressure_levels"]],
+        output_dir=str(d["output_dir"]) if d.get("output_dir") else None,
+    )
+
+
+def load_era5_config(path: str | os.PathLike[str]) -> Era5RunConfig:
+    """Parse an ERA5 YAML run config into an Era5RunConfig dataclass."""
+    import yaml  # noqa: PLC0415
+
+    with open(path, "r", encoding="utf-8") as f:
+        raw: dict[str, Any] = yaml.safe_load(f)
+
+    _require_keys(
+        raw,
+        {"target_grid", "era5", "output_flags", "header", "frame", "output_path"},
+        "config root",
+    )
+
+    target = _target_grid_from_dict(raw["target_grid"])
+    era5 = _era5_config_from_dict(raw["era5"])
+    flags = _output_flags_from_dict(raw["output_flags"])
+    header_opts = _header_options_from_dict(
+        raw["header"], flags, era5.pressure_levels
+    )
+    frame_opts = _frame_options_from_dict(raw["frame"], era5.pressure_levels)
+
+    return Era5RunConfig(
+        target_grid=target,
+        era5=era5,
+        output_flags=flags,
+        header=header_opts,
+        frame=frame_opts,
+        output_path=str(raw["output_path"]),
     )
 
 

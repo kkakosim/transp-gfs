@@ -40,7 +40,8 @@ _VALID_YAML = dedent("""\
 
     gfs:
       cycle: "2026-01-15T00:00"
-      forecast_hours: [0, 3, 6]
+      start_date: "2026-01-15T00:00"
+      end_date: "2026-01-15T06:00"
       pressure_levels: [1000, 850, 500]
       product: pgrb2.0p25
       model: gfs
@@ -200,7 +201,7 @@ def test_download_called_with_cycle_and_fxx_from_config(
 
     kwargs = mock_dl.call_args.kwargs
     assert kwargs["cycle"] == datetime(2026, 1, 15, 0, 0)
-    assert kwargs["fxx_hours"] == [0, 3, 6]
+    assert kwargs["fxx_hours"] == list(range(7))  # 00Z to 06Z inclusive
     assert kwargs["model"] == "gfs"
     assert kwargs["product"] == "pgrb2.0p25"
     assert "t_pl" in kwargs["roles"]

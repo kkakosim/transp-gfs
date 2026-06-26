@@ -1,0 +1,82 @@
+# ERA5 reanalysis → CALMET 3D.DAT run config.
+#
+# Run with:
+#   python -m gfs2calmet.era5 config_era5_example.yaml
+#
+# Prerequisites:
+#   pip install cdsapi
+#   ~/.cdsapirc with a valid CDS API key
+#   (register at https://cds.climate.copernicus.eu)
+#
+# ERA5 vs GFS differences that affect this config:
+#   - No "cycle" concept: just start_date / end_date (same as gfs section)
+#   - 875 hPa level IS available in ERA5 (not in GFS pgrb2.0p25)
+#   - CDS queues the request server-side; first run takes ~5 min to download
+#   - Re-runs reuse the cached GRIB files automatically (--skip-download)
+
+# ---------------------------------------------------------------------------
+# CALMET driver grid
+# ---------------------------------------------------------------------------
+target_grid:
+  crs: "+proj=utm +zone=39 +ellps=WGS84 +datum=WGS84 +units=m"
+  x0_km: 445.978
+  y0_km: 2756.582
+  dx_km: 4.0
+  dy_km: 4.0
+  nx: 54
+  ny: 54
+
+# ---------------------------------------------------------------------------
+# ERA5 reanalysis source
+# ---------------------------------------------------------------------------
+era5:
+  # Inclusive start/end for the 3D.DAT output. Hourly ERA5 is downloaded
+  # for every hour from start_date to end_date.
+  start_date: "2024-01-15T00:00"
+  end_date:   "2024-01-18T00:00"
+  # ERA5 has the same standard levels as GFS plus 875 hPa.
+  pressure_levels: [1000, 975, 950, 925, 900, 875, 850, 800, 750, 700, 650, 600, 500]
+  # Where to save the two downloaded GRIB files.  Reused on re-runs.
+  output_dir: "./data/era5"
+
+# ---------------------------------------------------------------------------
+# 3D.DAT output flags  (same meaning as GFS config)
+# ---------------------------------------------------------------------------
+output_flags:
+  ioutw: 0
+  ioutq: 1
+  ioutc: 0
+  iouti: 0
+  ioutg: 0
+  iosrf: 0
+
+# ---------------------------------------------------------------------------
+# Header options  (same as GFS config)
+# ---------------------------------------------------------------------------
+header:
+  maptxt: "UTM"
+  nland: 38
+  default_elevation_m: 0
+  default_landuse: 16
+  dataset_message: "Produced by gfs2calmet from ERA5 reanalysis"
+  comments:
+    - "Qatar / UTM Zone 39N (WGS-84) driver grid"
+    - "ERA5 reanalysis — Copernicus Climate Change Service"
+    - "3D.DAT v2.1 format - feed CALMET with IPROG=14, ISTEPPGS=3600"
+  truelat1: 0.0
+  truelat2: 0.0
+  rlatc: 0.0
+  rlonc: 0.0
+
+# ---------------------------------------------------------------------------
+# Per-frame conversion options  (same as GFS config)
+# ---------------------------------------------------------------------------
+frame:
+  default_sst_k: 0.0        # ERA5 has native SST; this is only the fallback
+  default_snow_cover: 0
+  derive_q2_from_rh: true
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+output_path: "./out/ERA5_2024011500.3D.DAT"
