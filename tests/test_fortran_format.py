@@ -2,7 +2,7 @@
 
 import pytest
 
-from gfs2calmet.fortran_format import fmt_a, fmt_f, fmt_i, fmt_x
+from gfs2calmet.fortran_format import fmt_a, fmt_f, fmt_i, fmt_x, to_ascii
 
 
 class TestFmtI:
@@ -82,3 +82,39 @@ class TestFmtX:
 
     def test_zero_blanks(self) -> None:
         assert fmt_x(0) == ""
+
+
+class TestToAscii:
+    def test_pure_ascii_passes_through_unchanged(self) -> None:
+        s = "Qatar UTM 39N driver grid"
+        assert to_ascii(s) is s  # same object, no copy
+
+    def test_em_dash_becomes_hyphen(self) -> None:
+        assert to_ascii("3D.DAT v2.1 — feed CALMET") == "3D.DAT v2.1 - feed CALMET"
+
+    def test_en_dash_becomes_hyphen(self) -> None:
+        assert to_ascii("range 1–5") == "range 1-5"
+
+    def test_smart_quotes_become_straight_quotes(self) -> None:
+        assert to_ascii("‘single’") == "'single'"
+        assert to_ascii("“double”") == '"double"'
+
+    def test_degree_sign_becomes_deg(self) -> None:
+        assert to_ascii("25° N") == "25 deg N"
+
+    def test_ellipsis_becomes_three_dots(self) -> None:
+        assert to_ascii("more…") == "more..."
+
+    def test_unmapped_unicode_becomes_question_mark(self) -> None:
+        # CJK character not in our typography table.
+        assert to_ascii("中") == "?"
+
+    def test_mixed_typography_handled(self) -> None:
+        s = "Qatar — 25°N ‘test’ …"
+        assert to_ascii(s) == "Qatar - 25 degN 'test' ..."
+
+    def test_result_is_always_ascii_encodable(self) -> None:
+        # Pathological input still produces an ASCII-safe string.
+        s = "—…中µ×°"
+        out = to_ascii(s)
+        out.encode("ascii")  # must not raise

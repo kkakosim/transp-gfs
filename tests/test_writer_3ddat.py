@@ -526,3 +526,30 @@ def test_returns_number_of_frames_written(tmp_path: Path) -> None:
     header = _make_header(flags)
     n = write_3ddat(path, header, frames)
     assert n == 3
+
+
+def test_writer_sanitizes_non_ascii_text_fields(tmp_path: Path) -> None:
+    """User-supplied dataset_message + comments may contain typography
+    (em-dashes, smart quotes) that the ASCII-only CALMET reader can't
+    parse. The writer must transliterate before serializing."""
+    flags = OutputFlags(ioutw=0, ioutq=0, ioutc=0, iouti=0, ioutg=0, iosrf=0)
+    header = _make_header(flags)
+    # Replace the message and comments with non-ASCII variants.
+    header.dataset_message = "Qatar — UTM 39°N driver"
+    header.comments = [
+        Comment("3D.DAT — feed CALMET with IPROG=14"),
+        Comment("‘test’ at 25°N"),
+    ]
+    path = tmp_path / "nonascii.3D.DAT"
+    # If sanitization is missing, this raises UnicodeEncodeError.
+    write_3ddat(path, header, [_make_frame()])
+
+    text = path.read_text(encoding="ascii")
+    # Typography transliterated, never the raw Unicode.
+    assert "—" not in text
+    assert "‘" not in text
+    assert "°" not in text
+    # Sample of expected ASCII replacements.
+    assert "Qatar - UTM 39 degN driver" in text
+    assert "3D.DAT - feed CALMET with IPROG=14" in text
+    assert "'test' at 25 degN" in text

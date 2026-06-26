@@ -90,7 +90,7 @@ header:
   comments:
     - "Qatar / UTM Zone 39N (WGS-84) driver grid"
     - "Origin matches CALMET XORIGKM=453.9785 YORIGKM=2764.5820"
-    - "3D.DAT v2.1 format — feed CALMET with IPROG=14, ISTEPPGS=3600"
+    - "3D.DAT v2.1 format - feed CALMET with IPROG=14, ISTEPPGS=3600"
   # UTM has no truelat/rlat — leave at 0. For LCC/PS runs set these
   # to your projection origin and standard parallels.
   truelat1: 0.0

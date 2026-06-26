@@ -29,7 +29,7 @@ from gfs2calmet.dataset import (
     SurfaceRecord,
     VerticalRecord,
 )
-from gfs2calmet.fortran_format import fmt_a, fmt_f, fmt_i, fmt_x
+from gfs2calmet.fortran_format import fmt_a, fmt_f, fmt_i, fmt_x, to_ascii
 
 
 _LINE_END = "\n"
@@ -46,21 +46,31 @@ _HYDRO_ZERO_THRESHOLD = 0.00049
 
 
 def _write_header_record_1(out: IO[str], header: Header) -> None:
-    """Format(2a16, a64) — dataset name, version, message."""
+    """Format(2a16, a64) — dataset name, version, message.
+
+    Text fields are transliterated to ASCII so the file is safe for
+    CALMET's FORTRAN reader regardless of what the user pasted into
+    the YAML config.
+    """
     out.write(
-        fmt_a(header.dataset_name, 16)
-        + fmt_a(header.dataset_version, 16)
-        + fmt_a(header.dataset_message, 64)
+        fmt_a(to_ascii(header.dataset_name), 16)
+        + fmt_a(to_ascii(header.dataset_version), 16)
+        + fmt_a(to_ascii(header.dataset_message), 64)
         + _LINE_END
     )
 
 
 def _write_header_comments(out: IO[str], header: Header) -> None:
     """Header Record #2: NCOMM as (i4) (matches CALWRF v2.0.3 line 898).
-    Header Records #3..NCOMM+2: (a132) per comment."""
+    Header Records #3..NCOMM+2: (a132) per comment.
+
+    Each comment is transliterated to ASCII before writing (em-dashes,
+    smart quotes, etc. -> ASCII equivalents) so YAML configs that
+    pasted typography don't break the 3D.DAT.
+    """
     out.write(fmt_i(len(header.comments), 4) + _LINE_END)
     for c in header.comments:
-        out.write(fmt_a(c.text, 132) + _LINE_END)
+        out.write(fmt_a(to_ascii(c.text), 132) + _LINE_END)
 
 
 def _write_header_flags(out: IO[str], flags: OutputFlags) -> None:
@@ -81,7 +91,7 @@ def _write_header_projection(out: IO[str], header: Header) -> None:
     p = header.projection
     d = header.domain
     out.write(
-        fmt_a(p.maptxt, 4)
+        fmt_a(to_ascii(p.maptxt), 4)
         + fmt_f(p.rlatc, 9, 4)
         + fmt_f(p.rlonc, 10, 4)
         + fmt_f(p.truelat1, 7, 2)

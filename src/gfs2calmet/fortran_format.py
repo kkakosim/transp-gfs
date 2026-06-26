@@ -65,3 +65,46 @@ def fmt_a(value: str, width: int) -> str:
 def fmt_x(count: int) -> str:
     """FORTRAN nX edit descriptor — emit ``count`` blank characters."""
     return " " * count
+
+
+# ---------------------------------------------------------------------------
+# ASCII sanitization for text fields written to 3D.DAT
+# ---------------------------------------------------------------------------
+
+
+# Common typography that users paste into YAML configs but that CALMET
+# (an ASCII-only FORTRAN reader) cannot parse. Replace before writing.
+_UNICODE_TO_ASCII: dict[str, str] = {
+    "—": "-",      # em dash
+    "–": "-",      # en dash
+    "‘": "'",      # left single quote
+    "’": "'",      # right single quote
+    "“": '"',      # left double quote
+    "”": '"',      # right double quote
+    "…": "...",    # ellipsis
+    "°": " deg",   # degree sign
+    "×": "x",      # multiplication sign
+    "µ": "u",      # micro sign
+    "→": "->",     # right arrow
+    "←": "<-",     # left arrow
+    " ": " ",      # non-breaking space
+}
+
+
+def to_ascii(value: str) -> str:
+    """Best-effort transliteration of ``value`` to pure ASCII.
+
+    Maps a curated set of common typography (em/en dashes, smart quotes,
+    ellipsis, degree sign, etc.) to ASCII equivalents. Any character
+    that remains outside the ASCII range is replaced with ``"?"`` so
+    the writer never produces a file CALMET cannot read.
+
+    Pure-ASCII input is returned unchanged (no copy).
+    """
+    if value.isascii():
+        return value
+    for src, dst in _UNICODE_TO_ASCII.items():
+        if src in value:
+            value = value.replace(src, dst)
+    # Anything still non-ASCII becomes '?'.
+    return value.encode("ascii", "replace").decode("ascii")
