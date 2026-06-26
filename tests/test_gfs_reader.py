@@ -167,6 +167,37 @@ class TestExtractMessages:
         assert out == []
         assert any("q_pl" in rec.message for rec in caplog.records)
 
+    def test_matches_any_short_name_in_tuple(self) -> None:
+        """Surface fields accept multiple acceptable shortNames so
+        the reader works against any ecCodes version. Here the file
+        has the legacy ``u`` shortName instead of the modern ``10u``."""
+        fields = (
+            GfsField(
+                role="u10", short_name=("10u", "u"),
+                type_of_level="heightAboveGround", level=10,
+                native_units="m/s", target_units="m/s",
+            ),
+        )
+        msgs = [_msg("u", "heightAboveGround", 10, _t, 3.5)]  # legacy name
+        fake = _make_fake_pygrib({"f.grib2": msgs})
+        out = _extract_messages(["f.grib2"], fields, pygrib_module=fake)
+        assert len(out) == 1
+        assert np.allclose(out[0].values, 3.5)
+
+    def test_does_not_match_short_name_outside_tuple(self) -> None:
+        fields = (
+            GfsField(
+                role="u10", short_name=("10u", "u"),
+                type_of_level="heightAboveGround", level=10,
+                native_units="m/s", target_units="m/s",
+            ),
+        )
+        # 'gust' is the wind gust shortName — not in our tuple.
+        msgs = [_msg("gust", "heightAboveGround", 10, _t, 8.0)]
+        fake = _make_fake_pygrib({"f.grib2": msgs})
+        with pytest.raises(FileNotFoundError, match="u10"):
+            _extract_messages(["f.grib2"], fields, pygrib_module=fake)
+
     def test_iterates_multiple_files(self) -> None:
         fields = (
             GfsField(role="t2", short_name="t", type_of_level="heightAboveGround",

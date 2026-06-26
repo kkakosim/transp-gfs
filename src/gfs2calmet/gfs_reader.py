@@ -84,11 +84,11 @@ def _select_messages(
     restricts which pressure levels are kept.
     """
     matched: list[Any] = []
-    want_short = field.short_name
+    want_shorts = field.short_names
     want_tol = field.type_of_level
     want_level = field.level
     for msg in grb_iter:
-        if getattr(msg, "shortName", None) != want_short:
+        if getattr(msg, "shortName", None) not in want_shorts:
             continue
         if getattr(msg, "typeOfLevel", None) != want_tol:
             continue
@@ -246,7 +246,7 @@ def _assemble_dataset(
                 {
                     "units": f.target_units,
                     "native_units": f.native_units,
-                    "grib_short_name": f.short_name,
+                    "grib_short_name": ",".join(f.short_names),
                 },
             )
         else:
@@ -259,7 +259,7 @@ def _assemble_dataset(
                 {
                     "units": f.target_units,
                     "native_units": f.native_units,
-                    "grib_short_name": f.short_name,
+                    "grib_short_name": ",".join(f.short_names),
                     "type_of_level": f.type_of_level,
                     "level": f.level if f.level is not None else 0,
                 },

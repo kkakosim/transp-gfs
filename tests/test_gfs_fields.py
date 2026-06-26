@@ -103,3 +103,49 @@ class TestGfsFieldDataclass:
         )
         with pytest.raises(Exception):  # FrozenInstanceError, but exact name varies
             f.role = "u_pl"  # type: ignore[misc]
+
+    def test_short_names_normalizes_string_to_one_tuple(self) -> None:
+        f = GfsField(
+            role="t_pl", short_name="t", type_of_level="isobaricInhPa",
+            level=None, native_units="K", target_units="K",
+        )
+        assert f.short_names == ("t",)
+
+    def test_short_names_passes_tuple_through(self) -> None:
+        f = GfsField(
+            role="u10", short_name=("10u", "u"),
+            type_of_level="heightAboveGround", level=10,
+            native_units="m/s", target_units="m/s",
+        )
+        assert f.short_names == ("10u", "u")
+
+
+class TestSurfaceFieldShortNames:
+    """Surface fields use a tuple of acceptable ecCodes shortNames so
+    we match whether the user's ecCodes install exposes the modern
+    (``10u``, ``2t``, ``2d``) or legacy (``u``, ``t``, ``dpt``) form."""
+
+    def test_u10_accepts_both_10u_and_u(self) -> None:
+        f = next(x for x in SURFACE_FIELDS if x.role == "u10")
+        assert "10u" in f.short_names
+        assert "u" in f.short_names
+
+    def test_v10_accepts_both_10v_and_v(self) -> None:
+        f = next(x for x in SURFACE_FIELDS if x.role == "v10")
+        assert "10v" in f.short_names
+        assert "v" in f.short_names
+
+    def test_t2_accepts_both_2t_and_t(self) -> None:
+        f = next(x for x in SURFACE_FIELDS if x.role == "t2")
+        assert "2t" in f.short_names
+        assert "t" in f.short_names
+
+    def test_d2_accepts_both_2d_and_dpt(self) -> None:
+        f = next(x for x in SURFACE_FIELDS if x.role == "d2")
+        assert "2d" in f.short_names
+        assert "dpt" in f.short_names
+
+    def test_mslp_accepts_both_prmsl_and_msl(self) -> None:
+        f = next(x for x in SURFACE_FIELDS if x.role == "mslp")
+        assert "prmsl" in f.short_names
+        assert "msl" in f.short_names

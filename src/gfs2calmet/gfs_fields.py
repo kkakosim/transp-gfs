@@ -15,7 +15,7 @@ ecCodes shortNames.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Union
 
 
 # ---------------------------------------------------------------------------
@@ -31,9 +31,14 @@ class GfsField:
     ----------
     role : str
         Canonical role used downstream. See ``ROLES`` for the full set.
-    short_name : str
-        pygrib / ecCodes ``shortName`` filter (lower-case 'u', 't',
-        'prmsl', ...).
+    short_name : str | tuple[str, ...]
+        pygrib / ecCodes ``shortName`` filter. May be a single string
+        (e.g. ``"t"``) or a tuple of acceptable shortNames (e.g.
+        ``("10u", "u")``). The tuple form is useful for surface fields
+        where ecCodes versions and parameter tables disagree: GFS 10-m
+        wind components are exposed as ``"10u"`` / ``"10v"`` in
+        recent ecCodes but as plain ``"u"`` / ``"v"`` (with level=10)
+        in older releases.
     type_of_level : str
         pygrib / ecCodes ``typeOfLevel`` filter
         ('isobaricInhPa', 'heightAboveGround', 'surface', 'meanSea').
@@ -52,7 +57,7 @@ class GfsField:
     """
 
     role: str
-    short_name: str
+    short_name: Union[str, tuple[str, ...]]
     type_of_level: str
     level: int | None
     native_units: str
@@ -60,6 +65,13 @@ class GfsField:
     multiplier: float = 1.0
     offset: float = 0.0
     optional: bool = False
+
+    @property
+    def short_names(self) -> tuple[str, ...]:
+        """Normalize ``short_name`` to a tuple for matching."""
+        if isinstance(self.short_name, str):
+            return (self.short_name,)
+        return tuple(self.short_name)
 
     def convert(self, value: float) -> float:
         return self.multiplier * value + self.offset
@@ -129,34 +141,49 @@ PRESSURE_LEVEL_FIELDS: tuple[GfsField, ...] = (
 
 # Surface / near-surface fields. PRMSL is "meanSea"; 2-m and 10-m fields
 # are "heightAboveGround"; precip and radiation are "surface".
+#
+# Each ``short_name`` is a tuple of acceptable ecCodes names because
+# the GRIB parameter tables vary by ecCodes version:
+#   * Recent (2.30+) GFS pgrb2 names: "10u", "10v", "2t", "2d", "2sh", "2r"
+#   * Older / generic ecCodes:        "u", "v", "t", "dpt", "q", "r"
+# Listing both lets the reader match whichever the underlying ecCodes
+# install produces. The (typeOfLevel + level) filter still pins the
+# vertical placement so a pressure-level message can't sneak through.
 SURFACE_FIELDS: tuple[GfsField, ...] = (
     GfsField(
-        role="mslp", short_name="prmsl", type_of_level="meanSea", level=0,
+        role="mslp", short_name=("prmsl", "msl"),
+        type_of_level="meanSea", level=0,
         native_units="Pa", target_units="hPa", multiplier=0.01,
     ),
     GfsField(
-        role="u10", short_name="u", type_of_level="heightAboveGround", level=10,
+        role="u10", short_name=("10u", "u"),
+        type_of_level="heightAboveGround", level=10,
         native_units="m/s", target_units="m/s",
     ),
     GfsField(
-        role="v10", short_name="v", type_of_level="heightAboveGround", level=10,
+        role="v10", short_name=("10v", "v"),
+        type_of_level="heightAboveGround", level=10,
         native_units="m/s", target_units="m/s",
     ),
     GfsField(
-        role="t2", short_name="t", type_of_level="heightAboveGround", level=2,
+        role="t2", short_name=("2t", "t"),
+        type_of_level="heightAboveGround", level=2,
         native_units="K", target_units="K",
     ),
     GfsField(
-        role="q2", short_name="q", type_of_level="heightAboveGround", level=2,
+        role="q2", short_name=("2sh", "q"),
+        type_of_level="heightAboveGround", level=2,
         native_units="kg/kg", target_units="g/kg", multiplier=1000.0,
         optional=True,
     ),
     GfsField(
-        role="rh2", short_name="r", type_of_level="heightAboveGround", level=2,
+        role="rh2", short_name=("2r", "r"),
+        type_of_level="heightAboveGround", level=2,
         native_units="%", target_units="%", optional=True,
     ),
     GfsField(
-        role="d2", short_name="dpt", type_of_level="heightAboveGround", level=2,
+        role="d2", short_name=("2d", "dpt"),
+        type_of_level="heightAboveGround", level=2,
         native_units="K", target_units="K", optional=True,
     ),
     GfsField(
@@ -165,11 +192,13 @@ SURFACE_FIELDS: tuple[GfsField, ...] = (
         optional=True,
     ),
     GfsField(
-        role="dswrf", short_name="dswrf", type_of_level="surface", level=0,
+        role="dswrf", short_name=("dswrf", "sdswrf"),
+        type_of_level="surface", level=0,
         native_units="W/m^2", target_units="W/m^2", optional=True,
     ),
     GfsField(
-        role="dlwrf", short_name="dlwrf", type_of_level="surface", level=0,
+        role="dlwrf", short_name=("dlwrf", "sdlwrf"),
+        type_of_level="surface", level=0,
         native_units="W/m^2", target_units="W/m^2", optional=True,
     ),
 )
