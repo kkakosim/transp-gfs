@@ -42,9 +42,10 @@ gfs:
      37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
      49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
      61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72]
-  # 12 pressure levels covering surface to ~5.8 km — well above the
-  # 4000 m CALMET ZFACE top in your INP.
-  pressure_levels: [1000, 975, 950, 925, 900, 875, 850, 800, 750, 700, 600, 500]
+  # 12 pressure levels covering surface to ~5.6 km — well above the
+  # 4000 m CALMET ZFACE top in your INP. These are all standard NCEP
+  # GFS pgrb2.0p25 levels (875 hPa is NOT in the GFS set — use 850).
+  pressure_levels: [1000, 975, 950, 925, 900, 850, 800, 750, 700, 650, 600, 500]
   product: "pgrb2.0p25"
   model: "gfs"
   # Herbie cache directory. Reused across runs to avoid re-downloads.

@@ -119,6 +119,14 @@ def _run(cfg: RunConfig, *, skip_download: bool) -> int:
     # period-length field to reflect the total file count (one valid
     # time per file).
     first_tgt = _decode_one(grib_paths[0], cfg)
+
+    # Reconcile requested vs. actually-available pressure levels.
+    # GFS pgrb2.0p25 has 1000, 975, 950, 925, 900, 850, 800, 750, 700,
+    # 650, 600, ... — no 875 hPa, no 550 above ground, etc. If the user
+    # requested levels that aren't in the source file, warn and drop
+    # them rather than crashing in build_frames.
+    cfg = _reconcile_pressure_levels(cfg, first_tgt)
+
     header = build_header(first_tgt, cfg.target_grid, cfg.header)
     header.time_window = dataclasses.replace(
         header.time_window,
@@ -133,6 +141,45 @@ def _run(cfg: RunConfig, *, skip_download: bool) -> int:
     )
     _LOG.info("Done. Wrote %d frames.", n)
     return 0
+
+
+def _reconcile_pressure_levels(cfg: RunConfig, first_tgt) -> RunConfig:
+    """Drop pressure levels from cfg that aren't actually in the source.
+
+    Returns a new RunConfig (with replaced ``gfs.pressure_levels``,
+    ``header.pressure_levels``, and ``frame.pressure_levels``) whose
+    level list is the intersection of the user's request and what the
+    decoded first file actually carries — preserving the user's
+    descending order. Raises if the intersection is empty.
+    """
+    available = set(int(lv) for lv in first_tgt["level"].values)
+    requested = list(cfg.gfs.pressure_levels)
+    kept = [p for p in requested if p in available]
+    missing = [p for p in requested if p not in available]
+
+    if missing:
+        _LOG.warning(
+            "Pressure levels not in GFS source file (dropped): %s. "
+            "Continuing with: %s",
+            missing, kept,
+        )
+    if not kept:
+        raise FileNotFoundError(
+            f"None of the requested pressure_levels {requested} are in the "
+            f"GFS file (available: {sorted(available, reverse=True)})"
+        )
+    if kept == requested:
+        return cfg
+
+    # All three options carry their own pressure_levels list — keep them
+    # in sync so the Header sigma_levels, the frame builder's check, and
+    # the reader's filter all agree.
+    new_gfs = dataclasses.replace(cfg.gfs, pressure_levels=kept)
+    new_header = dataclasses.replace(cfg.header, pressure_levels=kept)
+    new_frame = dataclasses.replace(cfg.frame, pressure_levels=kept)
+    return dataclasses.replace(
+        cfg, gfs=new_gfs, header=new_header, frame=new_frame,
+    )
 
 
 def _decode_one(grib_path: Path, cfg: RunConfig):

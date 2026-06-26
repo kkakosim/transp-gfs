@@ -17,7 +17,9 @@ from pathlib import Path
 from textwrap import dedent
 from unittest.mock import patch
 
+import numpy as np
 import pytest
+import xarray as xr
 
 from gfs2calmet import cli
 from gfs2calmet.dataset import (
@@ -99,6 +101,17 @@ def _stub_header() -> Header:
     )
 
 
+def _stub_regridded(levels=(1000, 850, 500)) -> xr.Dataset:
+    """Tiny xarray Dataset matching the shape regrid_dataset returns.
+
+    The CLI's reconciliation step looks at ``ds["level"].values``, so
+    a real Dataset with a level coord is the minimum needed.
+    """
+    return xr.Dataset(
+        coords={"level": ("level", np.array(list(levels), dtype=np.int32))},
+    )
+
+
 def _consume_generator_in_write(*args, **kwargs):
     """side_effect for write_3ddat that drains the frame generator so
     every per-file decode/regrid/build_frames call actually happens."""
@@ -129,7 +142,7 @@ def test_cli_streams_decode_regrid_build_once_per_file(tmp_path: Path) -> None:
                                 tmp_path / "f003.grib2",
                                 tmp_path / "f006.grib2"]
         mock_read.return_value = "src_ds"
-        mock_regrid.return_value = "regridded_ds"
+        mock_regrid.return_value = _stub_regridded()
         mock_header.return_value = _stub_header()
         mock_frames.return_value = ["F"]
 
@@ -161,7 +174,7 @@ def test_header_nhrsmm5_patched_to_total_file_count(tmp_path: Path) -> None:
                       return_value=[tmp_path / f"f{h:03d}.grib2"
                                     for h in (0, 3, 6)]), \
          patch.object(cli, "read_gfs_to_dataset", return_value="src"), \
-         patch.object(cli, "regrid_dataset", return_value="tgt"), \
+         patch.object(cli, "regrid_dataset", return_value=_stub_regridded()), \
          patch.object(cli, "build_header", return_value=_stub_header()), \
          patch.object(cli, "build_frames", return_value=[]), \
          patch.object(cli, "write_3ddat", side_effect=capture_write):
@@ -177,7 +190,7 @@ def test_download_called_with_cycle_and_fxx_from_config(
     cfg_path = _write_config(tmp_path)
     with patch.object(cli, "download_gfs_cycle") as mock_dl, \
          patch.object(cli, "read_gfs_to_dataset", return_value="src"), \
-         patch.object(cli, "regrid_dataset", return_value="tgt"), \
+         patch.object(cli, "regrid_dataset", return_value=_stub_regridded()), \
          patch.object(cli, "build_header", return_value=_stub_header()), \
          patch.object(cli, "build_frames", return_value=[]), \
          patch.object(cli, "write_3ddat",
@@ -199,13 +212,62 @@ def test_write_path_matches_config(tmp_path: Path) -> None:
     with patch.object(cli, "download_gfs_cycle",
                       return_value=[tmp_path / "f.grib2"]), \
          patch.object(cli, "read_gfs_to_dataset", return_value="src"), \
-         patch.object(cli, "regrid_dataset", return_value="tgt"), \
+         patch.object(cli, "regrid_dataset", return_value=_stub_regridded()), \
          patch.object(cli, "build_header", return_value=_stub_header()), \
          patch.object(cli, "build_frames", return_value=[]), \
          patch.object(cli, "write_3ddat",
                       side_effect=_consume_generator_in_write) as mock_write:
         cli.main([str(cfg_path)])
     assert mock_write.call_args.args[0] == "./out/test.3D.DAT"
+
+
+def test_unavailable_pressure_levels_are_dropped_with_warning(
+    tmp_path: Path, caplog
+) -> None:
+    """The user's config asks for [1000, 850, 500] but the source file
+    only carries [1000, 500] (no 850). The CLI should warn, drop 850
+    from header + frame options, and continue."""
+    cfg_path = _write_config(tmp_path)
+    available_levels = (1000, 500)  # 850 missing
+
+    captured = {}
+
+    def capture_cfg(cfg, target, opts):
+        captured["pressure_levels"] = list(opts.pressure_levels)
+        return _stub_header()
+
+    with patch.object(cli, "download_gfs_cycle",
+                      return_value=[tmp_path / "f.grib2"]), \
+         patch.object(cli, "read_gfs_to_dataset", return_value="src"), \
+         patch.object(cli, "regrid_dataset",
+                      return_value=_stub_regridded(levels=available_levels)), \
+         patch.object(cli, "build_header", side_effect=capture_cfg), \
+         patch.object(cli, "build_frames", return_value=[]), \
+         patch.object(cli, "write_3ddat",
+                      side_effect=_consume_generator_in_write):
+        with caplog.at_level("WARNING", logger="gfs2calmet"):
+            rc = cli.main([str(cfg_path)])
+
+    assert rc == 0
+    assert captured["pressure_levels"] == [1000, 500]
+    assert any("850" in rec.message and "not in GFS" in rec.message
+               for rec in caplog.records)
+
+
+def test_all_pressure_levels_unavailable_raises(tmp_path: Path) -> None:
+    cfg_path = _write_config(tmp_path)
+    with patch.object(cli, "download_gfs_cycle",
+                      return_value=[tmp_path / "f.grib2"]), \
+         patch.object(cli, "read_gfs_to_dataset", return_value="src"), \
+         patch.object(cli, "regrid_dataset",
+                      return_value=_stub_regridded(levels=(925, 700))), \
+         patch.object(cli, "build_header", return_value=_stub_header()), \
+         patch.object(cli, "build_frames", return_value=[]), \
+         patch.object(cli, "write_3ddat",
+                      side_effect=_consume_generator_in_write):
+        # Config requests [1000, 850, 500]; available is [925, 700] → empty.
+        with pytest.raises(FileNotFoundError, match="None of the requested"):
+            cli.main([str(cfg_path)])
 
 
 def test_empty_grib_paths_raises(tmp_path: Path) -> None:
@@ -235,7 +297,7 @@ def test_skip_download_reuses_existing_grib_files(tmp_path: Path) -> None:
         _os.chdir(tmp_path)
         with patch.object(cli, "download_gfs_cycle") as mock_dl, \
              patch.object(cli, "read_gfs_to_dataset", return_value="src"), \
-             patch.object(cli, "regrid_dataset", return_value="tgt"), \
+             patch.object(cli, "regrid_dataset", return_value=_stub_regridded()), \
              patch.object(cli, "build_header", return_value=_stub_header()), \
              patch.object(cli, "build_frames", return_value=[]), \
              patch.object(cli, "write_3ddat",
@@ -283,7 +345,7 @@ def test_verbose_flag_sets_logging(tmp_path: Path) -> None:
     with patch.object(cli, "download_gfs_cycle",
                       return_value=[tmp_path / "f.grib2"]), \
          patch.object(cli, "read_gfs_to_dataset", return_value="src"), \
-         patch.object(cli, "regrid_dataset", return_value="tgt"), \
+         patch.object(cli, "regrid_dataset", return_value=_stub_regridded()), \
          patch.object(cli, "build_header", return_value=_stub_header()), \
          patch.object(cli, "build_frames", return_value=[]), \
          patch.object(cli, "write_3ddat",
