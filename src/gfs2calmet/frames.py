@@ -102,6 +102,20 @@ def mixing_ratio_from_rh_t_p(
     return 1000.0 * w
 
 
+def rh_from_dewpoint(
+    td_k: np.ndarray, t_k: np.ndarray,
+) -> np.ndarray:
+    """Relative humidity (%) from 2-m dewpoint and temperature (both in K).
+
+    Uses the August-Roche-Magnus approximation.
+    """
+    td_c = np.asarray(td_k, dtype=np.float64) - 273.15
+    t_c = np.asarray(t_k, dtype=np.float64) - 273.15
+    es_t  = np.exp(17.625 * t_c  / (243.04 + t_c))
+    es_td = np.exp(17.625 * td_c / (243.04 + td_c))
+    return np.clip(100.0 * es_td / es_t, 0.0, 100.0)
+
+
 def sigma_levels_from_pressures(
     pressure_levels_hpa: Sequence[int],
     ref_hpa: float = _CALWRF_SIGMA_REF_HPA,
@@ -333,6 +347,7 @@ def build_frames(
     t2 = _nan_to_zero(_require_field(ds, "t2"), "t2")
     q2 = _nan_to_zero(_select_field(ds, "q2"), "q2")        # optional
     rh2 = _nan_to_zero(_select_field(ds, "rh2"), "rh2")     # optional
+    d2 = _nan_to_zero(_select_field(ds, "d2"), "d2")        # optional (ERA5)
     tp = _nan_to_zero(_select_field(ds, "tp"), "tp")        # optional
     dswrf = _nan_to_zero(_select_field(ds, "dswrf"), "dswrf")
     dlwrf = _nan_to_zero(_select_field(ds, "dlwrf"), "dlwrf")
@@ -359,6 +374,10 @@ def build_frames(
         q2_gkg = mixing_ratio_from_specific_humidity_gkg(q2)
     elif options.derive_q2_from_rh and rh2 is not None:
         q2_gkg = mixing_ratio_from_rh_t_p(rh2, t2, mslp)
+    elif options.derive_q2_from_rh and d2 is not None:
+        # ERA5 path: no rh2, but dewpoint (d2) is available.
+        rh2_from_d2 = rh_from_dewpoint(d2, t2)
+        q2_gkg = mixing_ratio_from_rh_t_p(rh2_from_d2, t2, mslp)
     else:
         q2_gkg = np.zeros_like(t2)
 

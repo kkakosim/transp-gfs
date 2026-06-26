@@ -166,7 +166,7 @@ def download_era5_period(
 
     common: dict[str, Any] = {
         "product_type": "reanalysis",
-        "format": "grib",
+        "data_format": "grib",
         **date_args,
     }
     if area is not None:

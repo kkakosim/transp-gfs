@@ -77,12 +77,8 @@ ERA5_SURFACE_FIELDS: tuple[GfsField, ...] = (
         type_of_level="heightAboveGround", level=2,
         native_units="K", target_units="K",
     ),
-    GfsField(
-        role="q2", short_name=("2sh", "q"),
-        type_of_level="heightAboveGround", level=2,
-        native_units="kg/kg", target_units="g/kg", multiplier=1000.0,
-        optional=True,
-    ),
+    # 2m specific humidity is NOT a standard ERA5 single-level variable;
+    # q2 is derived downstream from 2m dewpoint + t2 + mslp instead.
     GfsField(
         role="d2", short_name="2d",
         type_of_level="heightAboveGround", level=2,
@@ -143,7 +139,6 @@ CDS_SINGLE_LEVEL_VARIABLES: list[str] = [
     "10m_v_component_of_wind",
     "2m_temperature",
     "2m_dewpoint_temperature",
-    "2m_specific_humidity",
     "total_precipitation",
     "surface_solar_radiation_downwards",
     "surface_thermal_radiation_downwards",
