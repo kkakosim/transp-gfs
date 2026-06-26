@@ -192,6 +192,34 @@ class TestExtractMessages:
         assert {m.valid_time for m in out} == {np.datetime64(instant, "s")}
         assert len(out) == 2
 
+    def test_one_time_per_file_false_preserves_per_message_times(self) -> None:
+        """ERA5 ships every requested hour inside a single GRIB; the GFS
+        ``collapse to max time`` heuristic would discard all but one hour.
+        With one_time_per_file=False each message keeps its own validDate."""
+        fields = (
+            GfsField(role="t_pl", short_name="t", type_of_level="isobaricInhPa",
+                     level=None, native_units="K", target_units="K"),
+        )
+        t0 = datetime(2022, 7, 1, 0, 0)
+        t1 = datetime(2022, 7, 1, 1, 0)
+        t2 = datetime(2022, 7, 1, 2, 0)
+        msgs = [
+            _msg("t", "isobaricInhPa", 850, t0, 280.0),
+            _msg("t", "isobaricInhPa", 850, t1, 281.0),
+            _msg("t", "isobaricInhPa", 850, t2, 282.0),
+        ]
+        fake = _make_fake_pygrib({"era5.grib2": msgs})
+        out = _extract_messages(
+            ["era5.grib2"], fields,
+            pygrib_module=fake, one_time_per_file=False,
+        )
+        assert len(out) == 3
+        assert {m.valid_time for m in out} == {
+            np.datetime64(t0, "s"),
+            np.datetime64(t1, "s"),
+            np.datetime64(t2, "s"),
+        }
+
     def test_matches_any_short_name_in_tuple(self) -> None:
         """Surface fields accept multiple acceptable shortNames so
         the reader works against any ecCodes version. Here the file

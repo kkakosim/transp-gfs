@@ -107,8 +107,23 @@ def _extract_messages(
     levels: Sequence[int] | None = None,
     *,
     pygrib_module: Any | None = None,
+    one_time_per_file: bool = True,
 ) -> list[ExtractedMessage]:
     """Open each path with pygrib, pull matching messages, convert units.
+
+    Parameters
+    ----------
+    one_time_per_file
+        When True (GFS convention), every message in a file is normalized
+        to ``max(file_valid_times)`` so that accumulated fields (APCP,
+        DSWRF, DLWRF, ...) which report a midpoint validDate align with
+        the instantaneous fields' end-of-interval validDate.  Without
+        this, _assemble_dataset doubles the time axis and each field is
+        half NaN.
+
+        When False (ERA5 / any multi-time file convention), each message
+        keeps its own validDate.  Required when a single GRIB carries
+        many forecast hours — collapsing would discard all but one hour.
 
     Raises FileNotFoundError if a non-optional field has no matching
     message across all files.
@@ -127,14 +142,6 @@ def _extract_messages(
             if callable(close):
                 close()
 
-        # Normalize every message in this file to one valid_time. Each
-        # forecast file represents one hour by construction, but pygrib
-        # reports per-message validDate that varies by parameter type:
-        # accumulated/averaged messages (APCP, DSWRF, DLWRF, ...) often
-        # use the interval midpoint while instantaneous messages use the
-        # end. We collapse to the maximum so all fields land on the same
-        # time slice in _assemble_dataset; otherwise the union of times
-        # doubles the time axis and each field is half NaN.
         file_valid_times = [
             _as_datetime(m.validDate) for m in all_msgs
             if hasattr(m, "validDate")
@@ -142,15 +149,20 @@ def _extract_messages(
         if not file_valid_times:
             _LOG.warning("No valid_times found in %s; skipping file", path)
             continue
-        file_time = max(file_valid_times)
-        file_valid_np = np.datetime64(file_time, "s")
-        distinct = len(set(file_valid_times))
-        if distinct > 1:
-            _LOG.debug(
-                "File %s carries %d distinct validDates; normalizing "
-                "all messages to %s",
-                path, distinct, file_time.isoformat(),
-            )
+
+        file_valid_np: np.datetime64 | None
+        if one_time_per_file:
+            file_time = max(file_valid_times)
+            file_valid_np = np.datetime64(file_time, "s")
+            distinct = len(set(file_valid_times))
+            if distinct > 1:
+                _LOG.debug(
+                    "File %s carries %d distinct validDates; normalizing "
+                    "all messages to %s",
+                    path, distinct, file_time.isoformat(),
+                )
+        else:
+            file_valid_np = None  # use each message's own validDate below
 
         for field in fields:
             for msg in _select_messages(all_msgs, field, levels):
@@ -158,10 +170,15 @@ def _extract_messages(
                 raw = np.asarray(msg.values, dtype=np.float64)
                 converted = field.multiplier * raw + field.offset
                 level = int(getattr(msg, "level", 0))
+                if file_valid_np is None:
+                    msg_time = _as_datetime(msg.validDate)
+                    valid_np = np.datetime64(msg_time, "s")
+                else:
+                    valid_np = file_valid_np
                 extracted.append(
                     ExtractedMessage(
                         role=field.role,
-                        valid_time=file_valid_np,
+                        valid_time=valid_np,
                         level=level,
                         latitudes=np.asarray(lats, dtype=np.float64),
                         longitudes=np.asarray(lons, dtype=np.float64),

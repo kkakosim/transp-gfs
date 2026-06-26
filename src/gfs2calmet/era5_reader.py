@@ -267,7 +267,11 @@ def read_era5_to_dataset(
     before returning.
     """
     messages = _extract_messages(
-        [pl_path, sl_path], fields, levels, pygrib_module=pygrib_module,
+        [pl_path, sl_path], fields, levels,
+        pygrib_module=pygrib_module,
+        # ERA5 ships every requested hour inside a single GRIB; collapsing
+        # to one time per file would keep only the last hour.
+        one_time_per_file=False,
     )
     ds = _assemble_dataset(messages, fields, xarray_module=xarray_module)
     ds = deaccumulate_radiation(ds)
