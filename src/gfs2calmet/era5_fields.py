@@ -56,32 +56,37 @@ ERA5_PRESSURE_LEVEL_FIELDS: tuple[GfsField, ...] = (
 # Surface / near-surface fields
 # ---------------------------------------------------------------------------
 
+# ERA5 GRIB (delivered via MARS) stores ALL single-level fields with
+# typeOfLevel="surface" and level=0, regardless of whether the field is
+# meanSea (msl), 2 m (2t/2d), 10 m (10u/10v) or true surface (sst, tp,
+# ssrd, strd).  The vertical placement is implicit in the parameter
+# definition, so we disambiguate by shortName only.
 ERA5_SURFACE_FIELDS: tuple[GfsField, ...] = (
     GfsField(
         role="mslp", short_name="msl",
-        type_of_level="meanSea", level=0,
+        type_of_level="surface", level=0,
         native_units="Pa", target_units="hPa", multiplier=0.01,
     ),
     GfsField(
         role="u10", short_name="10u",
-        type_of_level="heightAboveGround", level=10,
+        type_of_level="surface", level=0,
         native_units="m/s", target_units="m/s",
     ),
     GfsField(
         role="v10", short_name="10v",
-        type_of_level="heightAboveGround", level=10,
+        type_of_level="surface", level=0,
         native_units="m/s", target_units="m/s",
     ),
     GfsField(
         role="t2", short_name="2t",
-        type_of_level="heightAboveGround", level=2,
+        type_of_level="surface", level=0,
         native_units="K", target_units="K",
     ),
     # 2m specific humidity is NOT a standard ERA5 single-level variable;
     # q2 is derived downstream from 2m dewpoint + t2 + mslp instead.
     GfsField(
         role="d2", short_name="2d",
-        type_of_level="heightAboveGround", level=2,
+        type_of_level="surface", level=0,
         native_units="K", target_units="K", optional=True,
     ),
     GfsField(
