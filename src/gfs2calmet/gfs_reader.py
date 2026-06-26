@@ -127,17 +127,41 @@ def _extract_messages(
             if callable(close):
                 close()
 
+        # Normalize every message in this file to one valid_time. Each
+        # forecast file represents one hour by construction, but pygrib
+        # reports per-message validDate that varies by parameter type:
+        # accumulated/averaged messages (APCP, DSWRF, DLWRF, ...) often
+        # use the interval midpoint while instantaneous messages use the
+        # end. We collapse to the maximum so all fields land on the same
+        # time slice in _assemble_dataset; otherwise the union of times
+        # doubles the time axis and each field is half NaN.
+        file_valid_times = [
+            _as_datetime(m.validDate) for m in all_msgs
+            if hasattr(m, "validDate")
+        ]
+        if not file_valid_times:
+            _LOG.warning("No valid_times found in %s; skipping file", path)
+            continue
+        file_time = max(file_valid_times)
+        file_valid_np = np.datetime64(file_time, "s")
+        distinct = len(set(file_valid_times))
+        if distinct > 1:
+            _LOG.debug(
+                "File %s carries %d distinct validDates; normalizing "
+                "all messages to %s",
+                path, distinct, file_time.isoformat(),
+            )
+
         for field in fields:
             for msg in _select_messages(all_msgs, field, levels):
                 lats, lons = msg.latlons()
                 raw = np.asarray(msg.values, dtype=np.float64)
                 converted = field.multiplier * raw + field.offset
-                valid = np.datetime64(_as_datetime(msg.validDate), "s")
                 level = int(getattr(msg, "level", 0))
                 extracted.append(
                     ExtractedMessage(
                         role=field.role,
-                        valid_time=valid,
+                        valid_time=file_valid_np,
                         level=level,
                         latitudes=np.asarray(lats, dtype=np.float64),
                         longitudes=np.asarray(lons, dtype=np.float64),

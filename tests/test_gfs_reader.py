@@ -167,6 +167,31 @@ class TestExtractMessages:
         assert out == []
         assert any("q_pl" in rec.message for rec in caplog.records)
 
+    def test_normalizes_mixed_validdates_within_one_file(self) -> None:
+        """GFS files mix instantaneous (validDate = end of step) with
+        accumulated/averaged messages (validDate = interval midpoint).
+        All messages from one file must land on the same valid_time
+        in the output (the maximum) so the assembled Dataset has
+        exactly one time slice per file."""
+        fields = (
+            GfsField(role="t_pl", short_name="t", type_of_level="isobaricInhPa",
+                     level=None, native_units="K", target_units="K"),
+            GfsField(role="dswrf", short_name="dswrf", type_of_level="surface",
+                     level=0, native_units="W/m^2", target_units="W/m^2",
+                     optional=True),
+        )
+        instant = datetime(2026, 1, 15, 1, 0)        # forecast hour
+        midpoint = datetime(2026, 1, 15, 0, 30)      # 0-1h average
+        msgs = [
+            _msg("t", "isobaricInhPa", 850, instant, 280.0),       # instantaneous
+            _msg("dswrf", "surface", 0, midpoint, 100.0),          # averaged
+        ]
+        fake = _make_fake_pygrib({"f001.grib2": msgs})
+        out = _extract_messages(["f001.grib2"], fields, pygrib_module=fake)
+        # Both messages share the max valid_time, not their per-message ones.
+        assert {m.valid_time for m in out} == {np.datetime64(instant, "s")}
+        assert len(out) == 2
+
     def test_matches_any_short_name_in_tuple(self) -> None:
         """Surface fields accept multiple acceptable shortNames so
         the reader works against any ecCodes version. Here the file
