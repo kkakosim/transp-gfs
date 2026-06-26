@@ -19,12 +19,14 @@ changes without paying the bandwidth cost each time.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Iterator, Sequence
 
 from gfs2calmet.config import RunConfig, load_config
+from gfs2calmet.dataset import Frame
 from gfs2calmet.frames import build_frames, build_header
 from gfs2calmet.gfs_fields import DEFAULT_GFS_FIELDS
 from gfs2calmet.gfs_reader import download_gfs_cycle, read_gfs_to_dataset
@@ -102,25 +104,65 @@ def _run(cfg: RunConfig, *, skip_download: bool) -> int:
             product=cfg.gfs.product,
         )
 
-    _LOG.info("Decoding GRIB2 (%d files) with pygrib", len(grib_paths))
+    if not grib_paths:
+        raise FileNotFoundError("no GRIB2 files to process")
+
+    # Stream one file at a time: decoding all 73 GFS files at once would
+    # hold ~35 GB of native-grid arrays in memory (60+ messages per file
+    # at 0.25 degree x 8 bytes = ~480 MB per file). Decoding per-file
+    # and regridding to the small target grid before moving on caps
+    # working memory at one file's worth.
+    _LOG.info("Decoding/regridding %d GRIB2 files (streaming, per-file)",
+              len(grib_paths))
+
+    # Build the header from the first file's geometry, then patch the
+    # period-length field to reflect the total file count (one valid
+    # time per file).
+    first_tgt = _decode_one(grib_paths[0], cfg)
+    header = build_header(first_tgt, cfg.target_grid, cfg.header)
+    header.time_window = dataclasses.replace(
+        header.time_window,
+        nhrsmm5=max(len(grib_paths) - 1, 1),
+    )
+
+    _LOG.info("Writing %s", cfg.output_path)
+    n = write_3ddat(
+        cfg.output_path,
+        header,
+        _stream_frames(grib_paths, cfg, first_tgt),
+    )
+    _LOG.info("Done. Wrote %d frames.", n)
+    return 0
+
+
+def _decode_one(grib_path: Path, cfg: RunConfig):
+    """Decode one GRIB2 file and regrid it to the configured driver grid.
+
+    Factored out so that the streaming generator can call it for every
+    forecast hour without the CLI orchestration code growing a loop
+    body that's harder to test in isolation.
+    """
     src_ds = read_gfs_to_dataset(
-        grib_paths,
+        [grib_path],
         fields=DEFAULT_GFS_FIELDS,
         levels=cfg.gfs.pressure_levels,
     )
+    return regrid_dataset(src_ds, cfg.target_grid)
 
-    _LOG.info("Regridding to %d x %d cells in %s",
-              cfg.target_grid.nx, cfg.target_grid.ny, cfg.target_grid.crs)
-    tgt_ds = regrid_dataset(src_ds, cfg.target_grid)
 
-    _LOG.info("Building header and %d frames", tgt_ds.sizes["time"])
-    header = build_header(tgt_ds, cfg.target_grid, cfg.header)
-    frames = build_frames(tgt_ds, cfg.frame)
-
-    _LOG.info("Writing %s", cfg.output_path)
-    n = write_3ddat(cfg.output_path, header, frames)
-    _LOG.info("Done. Wrote %d frames.", n)
-    return 0
+def _stream_frames(
+    grib_paths: list[Path],
+    cfg: RunConfig,
+    first_tgt,
+) -> Iterator[Frame]:
+    """Yield one Frame per forecast hour. The first file's regridded
+    Dataset is reused (we already decoded it to build the header)."""
+    _LOG.info("Frame 1/%d: %s", len(grib_paths), grib_paths[0].name)
+    yield from build_frames(first_tgt, cfg.frame)
+    for i, path in enumerate(grib_paths[1:], start=2):
+        _LOG.info("Frame %d/%d: %s", i, len(grib_paths), path.name)
+        tgt = _decode_one(path, cfg)
+        yield from build_frames(tgt, cfg.frame)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
