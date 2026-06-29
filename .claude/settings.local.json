@@ -37,7 +37,11 @@
       "Bash(python -m pytest tests/test_frames.py -x -q)",
       "Bash(python -m pytest tests/test_config.py -x -q)",
       "Bash(python -m pytest tests/ -x -q)",
-      "Bash(python -m pytest tests/ -q)"
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(awk 'length\\($0\\) > 40 && $1 ~ /^20/ {print substr\\($0,1,12\\); exit}' \"/e/Local/QG_test/ERA5_2024011500.3D.DAT\")",
+      "Bash(awk 'NR>2950 && NR<2960 {print NR\": \"$0}' \"/e/Local/QG_test/ERA5_2024011500.3D.DAT\")",
+      "Bash(awk 'NR>40 && /^[12][0-9]{9}/ {print NR\": \"$0; exit}' \"/e/Local/QG_test/ERA5_2024011500.3D.DAT\")",
+      "Bash(git reset *)"
     ]
   }
 }
