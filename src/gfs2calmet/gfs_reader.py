@@ -137,62 +137,17 @@ def _extract_messages(
     n_files = len(grib_paths)
     for idx, path in enumerate(grib_paths, start=1):
         _LOG.info("  [%d/%d] opening %s", idx, n_files, Path(path).name)
-        grbs = pg.open(str(path))
-        try:
-            all_msgs = list(grbs)
-        finally:
-            close = getattr(grbs, "close", None)
-            if callable(close):
-                close()
-        _LOG.info(
-            "  [%d/%d] read %d messages from %s",
-            idx, n_files, len(all_msgs), Path(path).name,
-        )
-
-        file_valid_times = [
-            _as_datetime(m.validDate) for m in all_msgs
-            if hasattr(m, "validDate")
-        ]
-        if not file_valid_times:
-            _LOG.warning("No valid_times found in %s; skipping file", path)
-            continue
-
-        file_valid_np: np.datetime64 | None
         if one_time_per_file:
-            file_time = max(file_valid_times)
-            file_valid_np = np.datetime64(file_time, "s")
-            distinct = len(set(file_valid_times))
-            if distinct > 1:
-                _LOG.debug(
-                    "File %s carries %d distinct validDates; normalizing "
-                    "all messages to %s",
-                    path, distinct, file_time.isoformat(),
-                )
+            _process_file_collapsed(
+                pg, path, fields, levels,
+                extracted, seen_per_role,
+            )
         else:
-            file_valid_np = None  # use each message's own validDate below
-
-        for field in fields:
-            for msg in _select_messages(all_msgs, field, levels):
-                lats, lons = msg.latlons()
-                raw = np.asarray(msg.values, dtype=np.float64)
-                converted = field.multiplier * raw + field.offset
-                level = int(getattr(msg, "level", 0))
-                if file_valid_np is None:
-                    msg_time = _as_datetime(msg.validDate)
-                    valid_np = np.datetime64(msg_time, "s")
-                else:
-                    valid_np = file_valid_np
-                extracted.append(
-                    ExtractedMessage(
-                        role=field.role,
-                        valid_time=valid_np,
-                        level=level,
-                        latitudes=np.asarray(lats, dtype=np.float64),
-                        longitudes=np.asarray(lons, dtype=np.float64),
-                        values=converted,
-                    )
-                )
-                seen_per_role[field.role] += 1
+            _process_file_streaming(
+                pg, path, fields, levels,
+                extracted, seen_per_role,
+            )
+        _LOG.info("  [%d/%d] done %s", idx, n_files, Path(path).name)
 
     for field in fields:
         if seen_per_role[field.role] == 0:
@@ -203,6 +158,121 @@ def _extract_messages(
                 raise FileNotFoundError(msg)
 
     return extracted
+
+
+def _process_file_collapsed(
+    pg: Any, path: Any, fields: Sequence[GfsField],
+    levels: Sequence[int] | None,
+    extracted: list[ExtractedMessage],
+    seen_per_role: dict[str, int],
+) -> None:
+    """GFS path: buffer messages and normalize to max(validDate)."""
+    grbs = pg.open(str(path))
+    try:
+        all_msgs = list(grbs)
+    finally:
+        close = getattr(grbs, "close", None)
+        if callable(close):
+            close()
+
+    file_valid_times = [
+        _as_datetime(m.validDate) for m in all_msgs
+        if hasattr(m, "validDate")
+    ]
+    if not file_valid_times:
+        _LOG.warning("No valid_times found in %s; skipping file", path)
+        return
+    file_time = max(file_valid_times)
+    file_valid_np = np.datetime64(file_time, "s")
+    distinct = len(set(file_valid_times))
+    if distinct > 1:
+        _LOG.debug(
+            "File %s carries %d distinct validDates; normalizing "
+            "all messages to %s",
+            path, distinct, file_time.isoformat(),
+        )
+
+    for field in fields:
+        for msg in _select_messages(all_msgs, field, levels):
+            lats, lons = msg.latlons()
+            raw = np.asarray(msg.values, dtype=np.float64)
+            converted = field.multiplier * raw + field.offset
+            level = int(getattr(msg, "level", 0))
+            extracted.append(
+                ExtractedMessage(
+                    role=field.role, valid_time=file_valid_np, level=level,
+                    latitudes=np.asarray(lats, dtype=np.float64),
+                    longitudes=np.asarray(lons, dtype=np.float64),
+                    values=converted,
+                )
+            )
+            seen_per_role[field.role] += 1
+
+
+def _process_file_streaming(
+    pg: Any, path: Any, fields: Sequence[GfsField],
+    levels: Sequence[int] | None,
+    extracted: list[ExtractedMessage],
+    seen_per_role: dict[str, int],
+) -> None:
+    """ERA5 path: iterate once and dispatch to the matching field.
+
+    Avoids the memory blow-up from ``list(grbs)`` on a multi-month ERA5
+    GRIB (50,000+ message handles per file).  Each message is matched
+    against the field catalog on the fly and decoded only if it's
+    wanted.  Progress is logged every 5000 messages so the user sees
+    the long decode is making progress.
+    """
+    grbs = pg.open(str(path))
+    field_list = list(fields)
+    msg_count = 0
+    matched_count = 0
+    try:
+        for msg in grbs:
+            msg_count += 1
+            if msg_count % 5000 == 0:
+                _LOG.info(
+                    "    %s: scanned %d msgs, decoded %d",
+                    Path(path).name, msg_count, matched_count,
+                )
+            short = getattr(msg, "shortName", None)
+            tol = getattr(msg, "typeOfLevel", None)
+            mlevel = getattr(msg, "level", None)
+            for field in field_list:
+                if short not in field.short_names:
+                    continue
+                if tol != field.type_of_level:
+                    continue
+                if field.level is not None and mlevel != field.level:
+                    continue
+                if field.level is None and levels is not None \
+                        and mlevel not in levels:
+                    continue
+                lats, lons = msg.latlons()
+                raw = np.asarray(msg.values, dtype=np.float64)
+                converted = field.multiplier * raw + field.offset
+                msg_time = _as_datetime(msg.validDate)
+                extracted.append(
+                    ExtractedMessage(
+                        role=field.role,
+                        valid_time=np.datetime64(msg_time, "s"),
+                        level=int(mlevel) if mlevel is not None else 0,
+                        latitudes=np.asarray(lats, dtype=np.float64),
+                        longitudes=np.asarray(lons, dtype=np.float64),
+                        values=converted,
+                    )
+                )
+                seen_per_role[field.role] += 1
+                matched_count += 1
+                break
+    finally:
+        close = getattr(grbs, "close", None)
+        if callable(close):
+            close()
+    _LOG.info(
+        "    %s: scanned %d msgs, decoded %d",
+        Path(path).name, msg_count, matched_count,
+    )
 
 
 def _as_datetime(dt: Any) -> datetime:

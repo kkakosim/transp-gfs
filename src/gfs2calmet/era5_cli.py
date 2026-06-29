@@ -95,36 +95,46 @@ def _run(cfg: Era5RunConfig, *, skip_download: bool) -> int:
             target=cfg.target_grid,
         )
 
-    _LOG.info("Decoding %d ERA5 GRIB chunk(s)", len(pl_paths))
-    src_ds = read_era5_to_dataset(
-        pl_paths, sl_paths,
-        fields=DEFAULT_ERA5_FIELDS,
-        levels=cfg.era5.pressure_levels,
-    )
-
-    _LOG.info("Regridding to CALMET driver grid")
-    tgt_ds = regrid_dataset(src_ds, cfg.target_grid)
-
-    # Reconcile available vs requested pressure levels (same as GFS pipeline).
-    cfg = _reconcile_pressure_levels(cfg, tgt_ds)
-
-    # Split the regridded Dataset into per-calendar-month 3D.DAT files
-    # (mirrors the GRIB download chunking and matches CALMET's NM3D
-    # multi-file ingest).  Single-month runs produce one file.
+    # Process one monthly chunk at a time so peak memory stays bounded
+    # to a single month's regridded Dataset.  Loading every chunk into
+    # one big in-memory Dataset before regridding can OOM on small hosts
+    # (a 4-month Qatar run holds ~3 GB of float64 PL data).
     chunks = _split_into_monthly_chunks(cfg.era5.start_date, cfg.era5.end_date)
     _LOG.info(
-        "Writing %d 3D.DAT file(s) (monthly chunks)", len(chunks),
+        "Processing %d monthly chunk(s): decode → regrid → write per chunk",
+        len(chunks),
     )
 
     total_frames = 0
-    for chunk_start, chunk_end in chunks:
-        chunk_ds = _slice_dataset_to_range(tgt_ds, chunk_start, chunk_end)
+    reconciled = False
+    for i, (chunk_start, chunk_end) in enumerate(chunks):
+        pl_path, sl_path = pl_paths[i], sl_paths[i]
+        _LOG.info(
+            "Chunk %d/%d: %s → %s",
+            i + 1, len(chunks),
+            chunk_start.isoformat(), chunk_end.isoformat(),
+        )
+
+        _LOG.info("  Decoding")
+        src_ds = read_era5_to_dataset(
+            pl_path, sl_path,
+            fields=DEFAULT_ERA5_FIELDS,
+            levels=cfg.era5.pressure_levels,
+        )
+
+        _LOG.info("  Regridding")
+        chunk_ds = regrid_dataset(src_ds, cfg.target_grid)
+        del src_ds   # free native-grid arrays before building frames
+
+        # Reconcile pressure levels against the first chunk only — same
+        # CDS request means all chunks carry the same level set.
+        if not reconciled:
+            cfg = _reconcile_pressure_levels(cfg, chunk_ds)
+            reconciled = True
+
         n_times = chunk_ds.sizes["time"]
         if n_times == 0:
-            _LOG.warning(
-                "Skipping empty chunk %s → %s",
-                chunk_start.isoformat(), chunk_end.isoformat(),
-            )
+            _LOG.warning("  Skipping empty chunk")
             continue
 
         header = build_header(chunk_ds, cfg.target_grid, cfg.header)
@@ -136,30 +146,19 @@ def _run(cfg: Era5RunConfig, *, skip_download: bool) -> int:
         output_path = _resolve_output_path(
             cfg.output_path, chunk_start, chunk_end,
         )
-        _LOG.info("  %s (%d frames)", output_path, n_times)
+        _LOG.info("  Writing %s (%d frames)", output_path, n_times)
         n = write_3ddat(
             output_path,
             header,
             _iter_frames(chunk_ds, cfg),
         )
         total_frames += n
+        del chunk_ds   # release before next chunk's decode
 
     _LOG.info(
         "Done. Wrote %d frames across %d file(s).", total_frames, len(chunks),
     )
     return 0
-
-
-def _slice_dataset_to_range(ds, start: datetime, end: datetime):
-    """Return ds restricted to time ∈ [start, end] (inclusive).
-
-    xarray's ``sel`` with a slice on a sorted time axis gives the closed
-    interval we want.  Used by the monthly-chunked writer.
-    """
-    import numpy as np                                  # noqa: PLC0415
-    return ds.sel(time=slice(
-        np.datetime64(start, "s"), np.datetime64(end, "s"),
-    ))
 
 
 def _resolve_output_path(user_path: str, start, end) -> str:
