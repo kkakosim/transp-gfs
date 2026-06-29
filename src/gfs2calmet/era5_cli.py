@@ -19,13 +19,18 @@ import argparse
 import dataclasses
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Sequence
 
 from gfs2calmet.config import Era5RunConfig, load_era5_config
 from gfs2calmet.dataset import Frame
 from gfs2calmet.era5_fields import DEFAULT_ERA5_FIELDS
-from gfs2calmet.era5_reader import download_era5_period, read_era5_to_dataset
+from gfs2calmet.era5_reader import (
+    _split_into_monthly_chunks,
+    download_era5_period,
+    read_era5_to_dataset,
+)
 from gfs2calmet.frames import build_frames, build_header
 from gfs2calmet.regrid import regrid_dataset
 from gfs2calmet.writer import write_3ddat
@@ -103,24 +108,58 @@ def _run(cfg: Era5RunConfig, *, skip_download: bool) -> int:
     # Reconcile available vs requested pressure levels (same as GFS pipeline).
     cfg = _reconcile_pressure_levels(cfg, tgt_ds)
 
-    header = build_header(tgt_ds, cfg.target_grid, cfg.header)
-    n_times = tgt_ds.sizes["time"]
-    header.time_window = dataclasses.replace(
-        header.time_window,
-        nhrsmm5=max(n_times - 1, 1),
+    # Split the regridded Dataset into per-calendar-month 3D.DAT files
+    # (mirrors the GRIB download chunking and matches CALMET's NM3D
+    # multi-file ingest).  Single-month runs produce one file.
+    chunks = _split_into_monthly_chunks(cfg.era5.start_date, cfg.era5.end_date)
+    _LOG.info(
+        "Writing %d 3D.DAT file(s) (monthly chunks)", len(chunks),
     )
 
-    output_path = _resolve_output_path(
-        cfg.output_path, cfg.era5.start_date, cfg.era5.end_date,
+    total_frames = 0
+    for chunk_start, chunk_end in chunks:
+        chunk_ds = _slice_dataset_to_range(tgt_ds, chunk_start, chunk_end)
+        n_times = chunk_ds.sizes["time"]
+        if n_times == 0:
+            _LOG.warning(
+                "Skipping empty chunk %s → %s",
+                chunk_start.isoformat(), chunk_end.isoformat(),
+            )
+            continue
+
+        header = build_header(chunk_ds, cfg.target_grid, cfg.header)
+        header.time_window = dataclasses.replace(
+            header.time_window,
+            nhrsmm5=max(n_times - 1, 1),
+        )
+
+        output_path = _resolve_output_path(
+            cfg.output_path, chunk_start, chunk_end,
+        )
+        _LOG.info("  %s (%d frames)", output_path, n_times)
+        n = write_3ddat(
+            output_path,
+            header,
+            _iter_frames(chunk_ds, cfg),
+        )
+        total_frames += n
+
+    _LOG.info(
+        "Done. Wrote %d frames across %d file(s).", total_frames, len(chunks),
     )
-    _LOG.info("Writing %s (%d frames)", output_path, n_times)
-    n = write_3ddat(
-        output_path,
-        header,
-        _iter_frames(tgt_ds, cfg),
-    )
-    _LOG.info("Done. Wrote %d frames.", n)
     return 0
+
+
+def _slice_dataset_to_range(ds, start: datetime, end: datetime):
+    """Return ds restricted to time ∈ [start, end] (inclusive).
+
+    xarray's ``sel`` with a slice on a sorted time axis gives the closed
+    interval we want.  Used by the monthly-chunked writer.
+    """
+    import numpy as np                                  # noqa: PLC0415
+    return ds.sel(time=slice(
+        np.datetime64(start, "s"), np.datetime64(end, "s"),
+    ))
 
 
 def _resolve_output_path(user_path: str, start, end) -> str:
