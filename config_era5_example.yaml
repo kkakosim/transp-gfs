@@ -19,12 +19,17 @@
 # ---------------------------------------------------------------------------
 target_grid:
   crs: "+proj=utm +zone=39 +ellps=WGS84 +datum=WGS84 +units=m"
-  x0_km: 445.978
-  y0_km: 2756.582
-  dx_km: 4.0
-  dy_km: 4.0
-  nx: 54
-  ny: 54
+  # 12 km cells: a sensible match for ERA5's ~28 km native resolution
+  # (vs the previous 4 km that oversampled the source ~7x).  Extent is
+  # 19 * 12 = 228 km, which gives a 1-cell halo (12 km) around the
+  # 200 km CALMET met grid in every direction.  SW corner sits one
+  # 12 km halo cell SW of CALMET's XORIGKM/YORIGKM (453.978, 2764.582).
+  x0_km: 441.978
+  y0_km: 2752.582
+  dx_km: 12.0
+  dy_km: 12.0
+  nx: 19
+  ny: 19
 
 # ---------------------------------------------------------------------------
 # ERA5 reanalysis source

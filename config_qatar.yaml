@@ -27,18 +27,21 @@ target_grid:
   # PROJ string for UTM Zone 39N on WGS-84 (matches PMAP=UTM, IUTMZN=39,
   # UTMHEM=N, DATUM=WGS-84 in CALMET.INP).
   crs: "+proj=utm +zone=39 +ellps=WGS84 +datum=WGS84 +units=m"
-  # SW corner of cell (1,1) in projected km. 8 km southwest of the
-  # CALMET met grid SW corner (XORIGKM/YORIGKM) so the 3D.DAT extends
-  # one 2-cell halo beyond CALMET in every direction.
-  x0_km: 445.978
-  y0_km: 2756.582
-  dx_km: 4.0
-  dy_km: 4.0
-  # 54 cells * 4 km = 216 km extent: CALMET's 200 km + 2 halo cells of
-  # 4 km on each side. To remove the halo (edge-coincident grids) set
-  # x0_km = 453.9785, y0_km = 2764.5820, nx = ny = 50.
-  nx: 54
-  ny: 54
+  # SW corner of cell (1,1) in projected km.  12 km SW of CALMET's
+  # met-grid SW corner (XORIGKM=453.978, YORIGKM=2764.582) so the
+  # 3D.DAT extends one 12-km halo cell beyond CALMET on every side.
+  x0_km: 441.978
+  y0_km: 2752.582
+  dx_km: 12.0
+  dy_km: 12.0
+  # 12 km cells match ERA5's ~28 km native resolution (oversamples ~2x).
+  # GFS 0.25 deg is ~28 km too, so the same choice fits both sources.
+  # Extent = 19 * 12 = 228 km: CALMET's 200 km + a 1-cell (12 km) halo
+  # each side.  For zero halo (edge-coincident grids) set nx=ny=17 and
+  # x0_km=453.978, y0_km=2764.582.  For a 2-cell halo, nx=ny=20 and
+  # x0_km=429.978, y0_km=2740.582.
+  nx: 19
+  ny: 19
 
 # ---------------------------------------------------------------------------
 # GFS cycle + forecast hours + pressure levels
