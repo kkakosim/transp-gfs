@@ -315,6 +315,30 @@ class TestBuildFrames:
         for cell in frames[0].cells[1:]:
             assert cell.surface.sst == cell.surface.t2
 
+    def test_vapmr_clamped_to_positive_floor(self) -> None:
+        """CALMET's _waterp routine takes log(e) with e = p*w/(eps+w);
+        if w == 0 the model dies with a domain error.  Upper-level air
+        over a hot desert can have specific humidity small enough to
+        round to 0.00 in the writer's F5.2 vapmr field.  build_frames
+        must clamp vapmr (and q2) above zero so the written value is
+        always >= 0.01 g/kg."""
+        ds = _make_regridded_dataset()
+        # rh_pl = 0% everywhere → mixing_ratio_from_rh_t_p returns 0.
+        rh_pl_zero = np.zeros_like(ds["rh_pl"].values)
+        ds = ds.assign(
+            rh_pl=(("time", "level", "y", "x"), rh_pl_zero, ds["rh_pl"].attrs)
+        )
+        # rh2 = 0% → q2_gkg path also returns 0.
+        rh2_zero = np.zeros_like(ds["rh2"].values)
+        ds = ds.assign(
+            rh2=(("time", "y", "x"), rh2_zero, ds["rh2"].attrs)
+        )
+        frames = build_frames(ds, self._opts())
+        for cell in frames[0].cells:
+            assert cell.surface.q2 >= 0.01
+            for level in cell.levels:
+                assert level.vapmr >= 0.01
+
     def test_sst_from_dataset_overrides_default(self) -> None:
         ds = _make_regridded_dataset()
         sst_k = np.full(ds["mslp"].shape, 302.5)

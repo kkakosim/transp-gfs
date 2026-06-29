@@ -406,6 +406,16 @@ def build_frames(
     else:
         q2_gkg = np.zeros_like(t2)
 
+    # CALMET's _waterp subroutine computes water vapor partial pressure
+    # e = p * w / (eps + w) and then takes log(e); it dies with a
+    # log-of-zero domain error when w (mixing ratio) is exactly 0.
+    # Upper-level air over a hot desert can have q < 1e-6 kg/kg, which
+    # quantizes to "0.00" in the writer's F5.2 vapmr field.  Clamp to a
+    # tiny positive floor so the written value is always >= 0.01 g/kg.
+    _VAPMR_FLOOR_GKG = 0.01
+    vapmr_pl = np.maximum(vapmr_pl, _VAPMR_FLOOR_GKG)
+    q2_gkg = np.maximum(q2_gkg, _VAPMR_FLOOR_GKG)
+
     # All NaN was scrubbed above, so .astype(int) is safe here. We use
     # np.int64 explicitly for portability between Linux (int=long) and
     # Windows (int=int32) — the values fit in int32 anyway.
