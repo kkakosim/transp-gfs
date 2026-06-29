@@ -133,7 +133,10 @@ def _extract_messages(
     extracted: list[ExtractedMessage] = []
     seen_per_role: dict[str, int] = {f.role: 0 for f in fields}
 
-    for path in grib_paths:
+    grib_paths = list(grib_paths)
+    n_files = len(grib_paths)
+    for idx, path in enumerate(grib_paths, start=1):
+        _LOG.info("  [%d/%d] opening %s", idx, n_files, Path(path).name)
         grbs = pg.open(str(path))
         try:
             all_msgs = list(grbs)
@@ -141,6 +144,10 @@ def _extract_messages(
             close = getattr(grbs, "close", None)
             if callable(close):
                 close()
+        _LOG.info(
+            "  [%d/%d] read %d messages from %s",
+            idx, n_files, len(all_msgs), Path(path).name,
+        )
 
         file_valid_times = [
             _as_datetime(m.validDate) for m in all_msgs
