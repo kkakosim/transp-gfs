@@ -22,3 +22,9 @@ data/cache/
 *.3D.DAT
 *.3d.dat
 !tests/data/*.3D.DAT
+
+# Vendor CALMET / CALPUFF source trees — referenced for debugging the
+# log() crashes; not part of this project's source.
+CALMET_v6.5.0_L150223/
+CALWRF_v2.0.3_L190426/
+MMIF4.1.1/
