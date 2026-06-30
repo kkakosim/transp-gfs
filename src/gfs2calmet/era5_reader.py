@@ -249,28 +249,25 @@ def download_era5_period(
 
 
 def deaccumulate_radiation(ds: Any) -> Any:
-    """Convert accumulated ssrd/strd (J/m²) to hourly-mean flux (W/m²).
+    """Convert ERA5 ssrd/strd (J/m² per hour) to hourly-mean flux (W/m²).
 
-    ERA5 radiation fields are accumulated from the start of the enclosing
-    forecast window (resets roughly every 12 h, detected by a drop in the
-    cumulative value).  This function differences consecutive time steps and
-    divides by 3600 s to produce a mean W/m² for each hour.  Negative
-    values (from noise at reset points or at night) are clamped to zero.
+    The ERA5 *hourly* reanalysis ships ssrd and strd already accumulated
+    over the past hour (not cumulative since model start), per the
+    Copernicus documentation:
+
+      "Integrated parameters in the reanalysis are accumulated over the
+       past hour."
+
+    So the conversion is just ``W/m² = J/m² / 3600 s``; differencing
+    consecutive hours (as we did previously) gave near-zero noise
+    (~3 W/m² instead of ~400 W/m² for downward longwave).  Negative
+    values from numerical noise are clamped to zero.
     """
     xr = _import_xarray()
     for role in ("dswrf", "dlwrf"):
         if role not in ds:
             continue
-        arr = ds[role].values.copy()   # shape (time, ...)
-        result = np.empty_like(arr)
-        result[0] = arr[0] / 3600.0
-        # Element-wise: where the previous step was higher (accumulation
-        # reset between this step and the prior one) treat the current
-        # value as a fresh one-hour accumulation; otherwise use the diff.
-        for ti in range(1, len(arr)):
-            diff = arr[ti] - arr[ti - 1]
-            result[ti] = np.where(diff >= 0.0, diff, arr[ti]) / 3600.0
-        result = np.maximum(result, 0.0)
+        result = np.maximum(ds[role].values / 3600.0, 0.0)
         ds = ds.assign(
             {role: xr.DataArray(result, dims=ds[role].dims, attrs={
                 **ds[role].attrs, "units": "W/m2",
