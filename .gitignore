@@ -28,3 +28,8 @@ data/cache/
 CALMET_v6.5.0_L150223/
 CALWRF_v2.0.3_L190426/
 MMIF4.1.1/
+
+# met_validation: raw inputs are large (Excel ~38 MB, CALMET .dat ~14 MB).
+# Keep the script + generated outputs in git, but not the inputs.
+met_validation/*.xlsx
+met_validation/*.dat
