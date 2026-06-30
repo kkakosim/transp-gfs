@@ -33,6 +33,11 @@ def _f(s: str) -> float:
     return float(s.strip())
 
 
+_PRES_LEVELS = {1000, 975, 950, 925, 900, 875, 850, 825, 800, 775,
+                750, 725, 700, 675, 650, 625, 600, 575, 550, 525,
+                500, 450, 400, 350, 300, 250, 200, 150, 100, 70, 50}
+
+
 def main(path: str) -> int:
     p = Path(path)
     print(f"scanning {p}", flush=True)
@@ -41,11 +46,13 @@ def main(path: str) -> int:
     n_vert = 0
     current_stamp = "?"
     current_ix = current_jx = "?"
+    in_data = False           # only inspect verticals after first surface line
 
     with open(p, "r", encoding="ascii", errors="replace") as f:
         for lineno, line in enumerate(f, start=1):
             m = _SURF_RE.match(line)
             if m:
+                in_data = True
                 n_surf += 1
                 current_stamp = m.group("stamp")
                 current_ix = m.group("ix").strip()
@@ -64,16 +71,24 @@ def main(path: str) -> int:
                         f"L{lineno} {current_stamp} ix={current_ix} jx={current_jx}: q2={q2}")
                 continue
 
+            if not in_data:
+                # Still inside the header block (grid points etc.).  Skip.
+                continue
+
             # Vertical record: i4 i6 f6.1 i4 f5.1 [i3 f5.2]
-            # Easier to parse with positions, but skip blanks and short lines.
             if len(line) < 25:
                 continue
             try:
                 pres_v = int(line[0:4])
-                # z = int(line[4:10])
+            except ValueError:
+                continue
+            # Header grid-point lines have iindex(i4)+jindex(i4) starting
+            # at column 0; the first int there is in [1, NX] not a real
+            # pressure level.  Restrict to recognised pressure levels.
+            if pres_v not in _PRES_LEVELS:
+                continue
+            try:
                 tempk = float(line[10:16])
-                # wd = int(line[16:20])
-                # ws = float(line[20:25])
             except ValueError:
                 continue
             n_vert += 1
