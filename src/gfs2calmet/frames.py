@@ -419,7 +419,11 @@ def build_frames(
     # All NaN was scrubbed above, so .astype(int) is safe here. We use
     # np.int64 explicitly for portability between Linux (int=long) and
     # Windows (int=int32) — the values fit in int32 anyway.
-    rh_pl_int = np.clip(np.round(rh_pl), 0, 100).astype(np.int64)
+    #
+    # RH floor: CALMET's _waterp uses log(rh/100 * es) along one code
+    # path; rh=0 → log(0).  Clamp to 1% so the written integer is
+    # always >= 1 (matches the same idea as the vapmr floor above).
+    rh_pl_int = np.clip(np.round(rh_pl), 1, 100).astype(np.int64)
     h_pl_int = np.round(h_pl).astype(np.int64)
     wd_pl_int = np.round(wd_pl).astype(np.int64) % 360
 

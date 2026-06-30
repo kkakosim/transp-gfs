@@ -380,7 +380,9 @@ class TestBuildFrames:
         vr = frames[0].cells[0].levels[0]
         assert not np.isnan(vr.tempk)
         assert not np.isnan(vr.ws)
-        assert vr.rh == 0  # was NaN → 0 → int
+        # NaN was scrubbed to 0, then clamped to the 1% floor we apply
+        # to RH (CALMET _waterp dies on log(0) when rh=0).
+        assert vr.rh == 1
         # Warning fired with the field name + count.
         msgs = [rec.message for rec in caplog.records]
         assert any("rh_pl" in m and "1" in m for m in msgs)
