@@ -88,10 +88,15 @@ def main(path: str) -> int:
             if pres_v not in _PRES_LEVELS:
                 continue
             try:
+                z_v = int(line[4:10])
                 tempk = float(line[10:16])
             except ValueError:
                 continue
             n_vert += 1
+            if z_v <= 0:
+                issues.append(
+                    f"L{lineno} {current_stamp} ix={current_ix} jx={current_jx} "
+                    f"pres={pres_v}: z={z_v}")
             if tempk <= 0:
                 issues.append(
                     f"L{lineno} {current_stamp} ix={current_ix} jx={current_jx} "

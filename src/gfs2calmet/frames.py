@@ -424,7 +424,14 @@ def build_frames(
     # path; rh=0 → log(0).  Clamp to 1% so the written integer is
     # always >= 1 (matches the same idea as the vapmr floor above).
     rh_pl_int = np.clip(np.round(rh_pl), 1, 100).astype(np.int64)
-    h_pl_int = np.round(h_pl).astype(np.int64)
+    # Geopotential height floor: at 1000 hPa over a hot land surface
+    # where p_surface < 1000 hPa, ERA5 reports z slightly negative (the
+    # 1000 hPa surface is "below ground").  CALMET's surface-layer code
+    # does alog(zlev/z10) on the lowest available level; if z rounds to
+    # 0 or goes negative the model dies with a log domain error.  Clamp
+    # to >= 1 m so each pressure-level record has a strictly positive
+    # height that's still physically reasonable.
+    h_pl_int = np.maximum(np.round(h_pl), 1).astype(np.int64)
     wd_pl_int = np.round(wd_pl).astype(np.int64) % 360
 
     frames: list[Frame] = []
